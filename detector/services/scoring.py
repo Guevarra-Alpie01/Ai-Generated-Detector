@@ -22,12 +22,33 @@ def weighted_score(scores: dict[str, float | None], weights: dict[str, float]) -
     return clamp_score(weighted_total / available_weight)
 
 
-def label_from_probability(ai_probability: float, threshold: float | None = None) -> tuple[str, float]:
-    threshold = threshold if threshold is not None else settings.AI_DETECTION_LABEL_THRESHOLD
+def get_label_thresholds(thresholds: dict[str, float] | None = None) -> dict[str, float]:
+    configured = thresholds or settings.DETECTION_LABEL_THRESHOLDS
+    low = clamp_score(configured.get("low", 0.35))
+    high = clamp_score(configured.get("high", 0.68))
+    if high <= low:
+        return {"low": 0.35, "high": 0.68}
+    return {"low": low, "high": high}
+
+
+def label_from_probability(
+    ai_probability: float,
+    thresholds: dict[str, float] | None = None,
+) -> tuple[str, float]:
     ai_probability = clamp_score(ai_probability)
-    if ai_probability >= threshold:
-        return "AI-generated", round(ai_probability * 100, 2)
-    return "Likely real", round((1 - ai_probability) * 100, 2)
+    resolved_thresholds = get_label_thresholds(thresholds)
+    low = resolved_thresholds["low"]
+    high = resolved_thresholds["high"]
+    midpoint = (low + high) / 2
+    uncertainty_band = max((high - low) / 2, 0.001)
+
+    if ai_probability >= high:
+        return "AI-generated", ai_probability
+    if ai_probability <= low:
+        return "Likely real", clamp_score(1 - ai_probability)
+
+    uncertainty_confidence = 1 - abs(ai_probability - midpoint) / uncertainty_band
+    return "Uncertain", clamp_score(uncertainty_confidence)
 
 
 @dataclass(slots=True)
@@ -37,6 +58,11 @@ class DetectionOutcome:
     details: str
     breakdown: dict[str, float | int | str | bool | list[str] | dict | None]
     source_metadata: dict[str, str | float | int | bool | list[str] | dict]
+    signals: list[str] = field(default_factory=list)
+    providers_used: list[str] = field(default_factory=list)
+    fallback_used: bool = False
+    provider_summary: dict[str, dict | list | str | float | bool | None] = field(default_factory=dict)
+    raw_provider_results: dict[str, dict | list | str | float | bool | None] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

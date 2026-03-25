@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -11,6 +12,37 @@ def env_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def env_float(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def env_json(name: str, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return default
+    return parsed if isinstance(parsed, type(default)) else default
 
 
 def env_list(name: str, default: list[str] | None = None) -> list[str]:
@@ -130,20 +162,19 @@ X_FRAME_OPTIONS = "DENY"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
-MAX_IMAGE_UPLOAD_SIZE = int(os.environ.get("MAX_IMAGE_UPLOAD_SIZE", 10 * 1024 * 1024))
-MAX_VIDEO_UPLOAD_SIZE = int(os.environ.get("MAX_VIDEO_UPLOAD_SIZE", 20 * 1024 * 1024))
-MAX_IMAGE_DIMENSION = int(os.environ.get("MAX_IMAGE_DIMENSION", 1280))
-MAX_VIDEO_ANALYSIS_SECONDS = int(os.environ.get("MAX_VIDEO_ANALYSIS_SECONDS", 12))
-MAX_VIDEO_FRAMES = int(os.environ.get("MAX_VIDEO_FRAMES", 5))
-MAX_VIDEO_PREVIEW_WIDTH = int(os.environ.get("MAX_VIDEO_PREVIEW_WIDTH", 960))
+MAX_IMAGE_UPLOAD_SIZE = env_int("MAX_IMAGE_UPLOAD_SIZE", 10 * 1024 * 1024)
+MAX_VIDEO_UPLOAD_SIZE = env_int("MAX_VIDEO_UPLOAD_SIZE", 20 * 1024 * 1024)
+MAX_IMAGE_DIMENSION = env_int("MAX_IMAGE_DIMENSION", 1280)
+MAX_VIDEO_ANALYSIS_SECONDS = env_int("MAX_VIDEO_ANALYSIS_SECONDS", 12)
+MAX_VIDEO_FRAMES = env_int("MAX_VIDEO_FRAMES", 5)
+MAX_VIDEO_PREVIEW_WIDTH = env_int("MAX_VIDEO_PREVIEW_WIDTH", 960)
 ENABLE_AUDIO_ANALYSIS = env_bool("ENABLE_AUDIO_ANALYSIS", True)
-MAX_AUDIO_ANALYSIS_SECONDS = int(os.environ.get("MAX_AUDIO_ANALYSIS_SECONDS", 10))
-AUDIO_ANALYSIS_SAMPLE_RATE = int(os.environ.get("AUDIO_ANALYSIS_SAMPLE_RATE", 16000))
-AUDIO_ANALYSIS_TIMEOUT_SECONDS = int(os.environ.get("AUDIO_ANALYSIS_TIMEOUT_SECONDS", 8))
+MAX_AUDIO_ANALYSIS_SECONDS = env_int("MAX_AUDIO_ANALYSIS_SECONDS", 10)
+AUDIO_ANALYSIS_SAMPLE_RATE = env_int("AUDIO_ANALYSIS_SAMPLE_RATE", 16000)
+AUDIO_ANALYSIS_TIMEOUT_SECONDS = env_int("AUDIO_ANALYSIS_TIMEOUT_SECONDS", 8)
 FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY", "")
-URL_FETCH_TIMEOUT_SECONDS = int(os.environ.get("URL_FETCH_TIMEOUT_SECONDS", 8))
-URL_FETCH_MAX_BYTES = int(os.environ.get("URL_FETCH_MAX_BYTES", 10 * 1024 * 1024))
-AI_DETECTION_LABEL_THRESHOLD = float(os.environ.get("AI_DETECTION_LABEL_THRESHOLD", 0.58))
+URL_FETCH_TIMEOUT_SECONDS = env_int("URL_FETCH_TIMEOUT_SECONDS", 8)
+URL_FETCH_MAX_BYTES = env_int("URL_FETCH_MAX_BYTES", 10 * 1024 * 1024)
 AI_DETECTION_MODEL_PATH = os.environ.get("AI_DETECTION_MODEL_PATH", "")
 AI_METADATA_KEYWORDS = [
     keyword.strip().lower()
@@ -153,18 +184,74 @@ AI_METADATA_KEYWORDS = [
     ).split(",")
     if keyword.strip()
 ]
-DETECTION_WEIGHTS = {
-    "image": {
-        "model_score": 0.20,
+
+TEMP_ANALYSIS_DIR = Path(os.environ.get("TEMP_ANALYSIS_DIR", BASE_DIR / "tmp"))
+TEMP_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
+PROVIDER_RAW_MAX_CHARS = env_int("PROVIDER_RAW_MAX_CHARS", 3000)
+
+LOCAL_IMAGE_WORKING_SIZE = env_int("LOCAL_IMAGE_WORKING_SIZE", 256)
+LOCAL_IMAGE_COMPONENT_WEIGHTS = env_json(
+    "LOCAL_IMAGE_COMPONENT_WEIGHTS",
+    {
         "metadata_score": 0.25,
-        "artifact_score": 0.55,
+        "artifact_score": 0.45,
+        "frequency_score": 0.30,
     },
-    "video": {
-        "model_score": 0.10,
+)
+LOCAL_VIDEO_COMPONENT_WEIGHTS = env_json(
+    "LOCAL_VIDEO_COMPONENT_WEIGHTS",
+    {
+        "frame_mean_score": 0.45,
+        "temporal_score": 0.20,
         "metadata_score": 0.15,
-        "artifact_score": 0.25,
-        "frame_score": 0.35,
-        "audio_score": 0.15,
+        "audio_score": 0.20,
+    },
+)
+DETECTION_PROVIDER_WEIGHTS = env_json(
+    "DETECTION_PROVIDER_WEIGHTS",
+    {
+        "local": 0.45,
+        "illuminarty": 0.30,
+        "reality_defender": 0.25,
+    },
+)
+DETECTION_LABEL_THRESHOLDS = {
+    "low": env_float("DETECTION_LABEL_LOW_THRESHOLD", 0.35),
+    "high": env_float("DETECTION_LABEL_HIGH_THRESHOLD", 0.68),
+}
+if DETECTION_LABEL_THRESHOLDS["high"] <= DETECTION_LABEL_THRESHOLDS["low"]:
+    DETECTION_LABEL_THRESHOLDS = {"low": 0.35, "high": 0.68}
+AI_DETECTION_LABEL_THRESHOLD = DETECTION_LABEL_THRESHOLDS["high"]
+DETECTION_DISAGREEMENT_SPREAD_THRESHOLD = env_float("DETECTION_DISAGREEMENT_SPREAD_THRESHOLD", 0.35)
+
+ILLUMINARTY_ENABLED = env_bool("ILLUMINARTY_ENABLED", False)
+ILLUMINARTY_API_KEY = os.environ.get("ILLUMINARTY_API_KEY", "").strip()
+ILLUMINARTY_API_URL = os.environ.get("ILLUMINARTY_API_URL", "").strip()
+ILLUMINARTY_TIMEOUT_SECONDS = env_float("ILLUMINARTY_TIMEOUT_SECONDS", 6.0)
+ILLUMINARTY_AUTH_HEADER = os.environ.get("ILLUMINARTY_AUTH_HEADER", "Authorization").strip() or "Authorization"
+ILLUMINARTY_AUTH_SCHEME = os.environ.get("ILLUMINARTY_AUTH_SCHEME", "Bearer").strip()
+ILLUMINARTY_UPLOAD_FIELD_NAME = os.environ.get("ILLUMINARTY_UPLOAD_FIELD_NAME", "file").strip() or "file"
+
+REALITY_DEFENDER_ENABLED = env_bool("REALITY_DEFENDER_ENABLED", False)
+REALITY_DEFENDER_API_KEY = os.environ.get("REALITY_DEFENDER_API_KEY", "").strip()
+REALITY_DEFENDER_API_URL = os.environ.get(
+    "REALITY_DEFENDER_API_URL",
+    "https://api.prd.realitydefender.xyz",
+).strip()
+REALITY_DEFENDER_TIMEOUT_SECONDS = env_float("REALITY_DEFENDER_TIMEOUT_SECONDS", 6.0)
+REALITY_DEFENDER_MAX_POLLS = env_int("REALITY_DEFENDER_MAX_POLLS", 2)
+REALITY_DEFENDER_POLL_INTERVAL_SECONDS = env_float("REALITY_DEFENDER_POLL_INTERVAL_SECONDS", 1.0)
+REALITY_DEFENDER_SOFT_LIMIT_PER_DAY = env_int("REALITY_DEFENDER_SOFT_LIMIT_PER_DAY", 20)
+ENABLE_EXTERNAL_VIDEO_PROVIDERS = env_bool("ENABLE_EXTERNAL_VIDEO_PROVIDERS", False)
+
+# Backward-compatible aliases for older modules that still read the old names.
+DETECTION_WEIGHTS = {
+    "image": dict(LOCAL_IMAGE_COMPONENT_WEIGHTS),
+    "video": {
+        "frame_mean_score": LOCAL_VIDEO_COMPONENT_WEIGHTS.get("frame_mean_score", 0.45),
+        "temporal_score": LOCAL_VIDEO_COMPONENT_WEIGHTS.get("temporal_score", 0.20),
+        "metadata_score": LOCAL_VIDEO_COMPONENT_WEIGHTS.get("metadata_score", 0.15),
+        "audio_score": LOCAL_VIDEO_COMPONENT_WEIGHTS.get("audio_score", 0.20),
     },
 }
 

@@ -1,4 +1,10 @@
 export default function HistoryTable({ history, loading, page, onPageChange }) {
+  function formatConfidence(value) {
+    const numeric = Number(value || 0);
+    const normalized = numeric > 1 ? numeric / 100 : numeric;
+    return `${(Math.max(0, Math.min(1, normalized)) * 100).toFixed(0)}%`;
+  }
+
   function labelClass(label) {
     if (label === "AI-generated") {
       return "text-bg-danger";
@@ -49,7 +55,7 @@ export default function HistoryTable({ history, loading, page, onPageChange }) {
                   <td>
                     <span className={`badge ${labelClass(item.result_label)}`}>{item.result_label}</span>
                   </td>
-                  <td>{(Number(item.confidence_score || 0) * 100).toFixed(0)}%</td>
+                  <td>{formatConfidence(item.confidence_score)}</td>
                   <td>{new Date(item.created_at).toLocaleString()}</td>
                 </tr>
               ))}

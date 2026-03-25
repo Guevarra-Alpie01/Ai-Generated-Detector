@@ -129,6 +129,50 @@ class LocalDetectorTests(SimpleTestCase):
         self.assertIn("analysis_stats", source_metadata)
         self.assertIn("frequency_score", breakdown)
 
+    def test_consistency_guard_dampens_single_artifact_spike(self):
+        local_detector = LocalImageDetector()
+        metadata_score, artifact_score, frequency_score, signals = local_detector._apply_consistency_guard(
+            0.48,
+            0.96,
+            0.44,
+            {
+                "local_noise": 0.0062,
+                "high_frequency_ratio": 0.24,
+            },
+        )
+
+        self.assertEqual(metadata_score, 0.48)
+        self.assertEqual(frequency_score, 0.44)
+        self.assertLess(artifact_score, 0.7)
+        self.assertTrue(any("single-signal spike" in signal or "artifact spike" in signal for signal in signals))
+
+    def test_artifact_scoring_handles_natural_outdoor_detail_more_conservatively(self):
+        local_detector = LocalImageDetector()
+        score, signals = local_detector._score_artifacts(
+            {
+                "edge_density": 0.031,
+                "local_noise": 0.0065,
+                "detail_residual": 0.0072,
+                "saturation": 0.24,
+                "saturation_spread": 0.22,
+                "contrast": 0.23,
+                "entropy": 7.5,
+                "shadow_clip": 0.003,
+                "highlight_clip": 0.012,
+                "histogram_fill": 0.95,
+                "saturation_histogram_fill": 0.83,
+                "high_frequency_ratio": 0.24,
+                "mid_frequency_ratio": 0.46,
+                "low_frequency_ratio": 0.30,
+                "frequency_direction_bias": 0.09,
+                "noise_variation": 0.055,
+                "detail_variation": 0.04,
+            }
+        )
+
+        self.assertLess(score, 0.5)
+        self.assertTrue(any("camera photo" in signal or "natural" in signal for signal in signals))
+
 
 class ProviderBehaviorTests(SimpleTestCase):
     def setUp(self):
@@ -274,6 +318,32 @@ class DetectionServiceAggregationTests(SimpleTestCase):
 
         self.assertEqual(outcome.label, "Uncertain")
         self.assertIn("providers disagreed", outcome.details.lower())
+
+    @override_settings(
+        LOCAL_ONLY_LABEL_THRESHOLDS={"low": 0.46, "high": 0.78},
+        LOCAL_ONLY_COMPONENT_SPREAD_THRESHOLD=0.24,
+    )
+    def test_local_only_guard_prevents_artifact_only_false_positive(self):
+        aggregator = ScoreAggregator()
+        outcome = aggregator.combine(
+            [
+                ProviderResult.success(
+                    "local",
+                    ai_score=0.68,
+                    signals=["artifact score elevated"],
+                    raw={"score": 0.68},
+                )
+            ],
+            source_metadata={},
+            local_breakdown={
+                "artifact_score": 0.96,
+                "frequency_score": 0.44,
+                "metadata_score": 0.48,
+            },
+        )
+
+        self.assertNotEqual(outcome.label, "AI-generated")
+        self.assertIn("local-only evidence was mixed", outcome.details.lower())
 
     @override_settings(ILLUMINARTY_ENABLED=False, REALITY_DEFENDER_ENABLED=False)
     def test_successful_local_only_path(self):

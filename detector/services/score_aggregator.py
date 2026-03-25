@@ -64,10 +64,24 @@ class ScoreAggregator:
         else:
             combined_score = weighted_total / total_weight
 
+        providers_used = [result.provider for result in successful]
+        fallback_used = "local" in providers_used
         combined_score = clamp_score(combined_score)
-        label, confidence = label_from_probability(combined_score)
-        low_threshold = settings.DETECTION_LABEL_THRESHOLDS.get("low", 0.35)
-        high_threshold = settings.DETECTION_LABEL_THRESHOLDS.get("high", 0.68)
+        local_only_guard_triggered = False
+        if providers_used == ["local"]:
+            combined_score, local_only_guard_triggered = self._apply_local_only_guard(
+                combined_score,
+                local_breakdown,
+            )
+
+        thresholds = (
+            settings.LOCAL_ONLY_LABEL_THRESHOLDS
+            if providers_used == ["local"]
+            else settings.DETECTION_LABEL_THRESHOLDS
+        )
+        label, confidence = label_from_probability(combined_score, thresholds=thresholds)
+        low_threshold = thresholds.get("low", 0.35)
+        high_threshold = thresholds.get("high", 0.68)
         score_spread = (
             max(provider_scores.values()) - min(provider_scores.values())
             if len(provider_scores) > 1
@@ -83,11 +97,11 @@ class ScoreAggregator:
             signals.extend(result.signals[:3])
         if disagreement:
             signals.append("The successful providers disagreed on the likelihood of AI generation.")
+        if local_only_guard_triggered:
+            signals.append("Local-only image signals disagreed, so the detector avoided an overconfident label.")
         final_signals = list(dict.fromkeys(signals))
 
-        providers_used = [result.provider for result in successful]
-        fallback_used = "local" in providers_used
-        details = self._build_details(providers_used, skipped, failed, disagreement)
+        details = self._build_details(providers_used, skipped, failed, disagreement, local_only_guard_triggered)
 
         breakdown = {
             "ai_score": combined_score,
@@ -142,6 +156,7 @@ class ScoreAggregator:
         skipped: list[ProviderResult],
         failed: list[ProviderResult],
         disagreement: bool,
+        local_only_guard_triggered: bool,
     ) -> str:
         parts: list[str] = []
         external_used = [provider for provider in providers_used if provider != "local"]
@@ -169,5 +184,24 @@ class ScoreAggregator:
 
         if disagreement:
             parts.append("The providers disagreed enough to keep the final label in the uncertain range.")
+        elif local_only_guard_triggered:
+            parts.append("Local-only evidence was mixed, so the detector stayed conservative instead of overcalling AI generation.")
 
         return " ".join(parts)
+
+    def _apply_local_only_guard(self, combined_score: float, local_breakdown: dict) -> tuple[float, bool]:
+        component_scores = [
+            float(local_breakdown[key])
+            for key in ("metadata_score", "artifact_score", "frequency_score")
+            if isinstance(local_breakdown.get(key), (int, float))
+        ]
+        if len(component_scores) < 2:
+            return combined_score, False
+
+        component_spread = max(component_scores) - min(component_scores)
+        if component_spread < settings.LOCAL_ONLY_COMPONENT_SPREAD_THRESHOLD:
+            return combined_score, False
+
+        component_average = sum(component_scores) / len(component_scores)
+        adjusted_score = clamp_score((combined_score * 0.3) + (component_average * 0.35) + (0.5 * 0.35))
+        return adjusted_score, True

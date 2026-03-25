@@ -45,6 +45,14 @@ class LocalImageDetector:
                 signals,
                 source_metadata,
             )
+        else:
+            metadata_score, artifact_score, frequency_score, guard_signals = self._apply_consistency_guard(
+                metadata_score,
+                artifact_score,
+                frequency_score,
+                stats,
+            )
+            signals.extend(guard_signals)
 
         ai_score = weighted_score(
             {
@@ -155,12 +163,15 @@ class LocalImageDetector:
                 ai_evidence += 0.22
                 signals.append("Textures look unusually smooth, which can happen when generative models suppress natural noise.")
         elif (
-            stats["edge_density"] > 0.022
-            and stats["detail_residual"] > 0.006
-            and stats["saturation_spread"] > 0.18
+            stats["edge_density"] > 0.026
+            and stats["detail_residual"] > 0.0065
+            and stats["saturation_spread"] > 0.2
+            and stats["local_noise"] < 0.0058
         ):
-            ai_evidence += 0.24
-            signals.append("Edges, micro-contrast, and color spread are all elevated, which is common in synthetic renders.")
+            ai_evidence += 0.18
+            signals.append(
+                "Edges and micro-contrast are elevated while fine noise stays unusually clean, which is common in synthetic renders."
+            )
         elif (
             0.01 <= stats["edge_density"] <= 0.05
             and stats["detail_residual"] <= 0.006
@@ -169,6 +180,18 @@ class LocalImageDetector:
             real_evidence += 0.14
             signals.append("Edge strength and texture detail stay within a camera-like range.")
 
+        if (
+            stats["edge_density"] > 0.02
+            and stats["local_noise"] > 0.0045
+            and stats["high_frequency_ratio"] > 0.2
+            and stats["frequency_direction_bias"] < 0.2
+            and clip_total < 0.04
+        ):
+            real_evidence += 0.18
+            signals.append(
+                "Fine-grain detail and noise vary naturally, which is more consistent with a real camera photo than a rendered image."
+            )
+
         if clip_total > 0.025:
             ai_evidence += 0.16
             signals.append("Shadows and highlights clip aggressively, which is more common in rendered or heavily synthesized media.")
@@ -176,8 +199,12 @@ class LocalImageDetector:
             real_evidence += 0.12
             signals.append("The tonal histogram avoids harsh clipping, which supports a natural capture.")
 
-        if stats["saturation_spread"] > 0.18 and stats["contrast"] >= 0.18:
-            ai_evidence += 0.12
+        if (
+            stats["saturation_spread"] > 0.2
+            and stats["contrast"] >= 0.2
+            and (clip_total > 0.02 or stats["local_noise"] < 0.0045)
+        ):
+            ai_evidence += 0.08
             signals.append("Color variation is unusually wide for the observed contrast, hinting at synthetic color transitions.")
         elif stats["saturation_spread"] < 0.14 and stats["saturation"] < 0.26:
             real_evidence += 0.08
@@ -215,7 +242,7 @@ class LocalImageDetector:
         direction_bias = stats["frequency_direction_bias"]
         spike_ratio = stats["spectral_spike_ratio"]
 
-        if high_ratio < 0.18 and mid_ratio > 0.48:
+        if high_ratio < 0.18 and mid_ratio > 0.48 and stats["local_noise"] < 0.0045:
             ai_evidence += 0.16
             signals.append(
                 "Frequency energy is concentrated in the mid band with limited natural high-frequency texture."
@@ -230,9 +257,9 @@ class LocalImageDetector:
         elif spike_ratio < 0.0025 and low_ratio > 0.05:
             real_evidence += 0.06
 
-        if high_ratio > 0.36 and stats["noise_variation"] > 0.06:
-            real_evidence += 0.05
-            signals.append("Fine-grain detail and noise vary in a more camera-like way.")
+        if high_ratio > 0.26 and stats["noise_variation"] > 0.035 and stats["detail_variation"] > 0.025:
+            real_evidence += 0.08
+            signals.append("Fine detail spreads across the frequency range in a way that looks more photographic than synthetic.")
         elif high_ratio < 0.14 and stats["detail_variation"] < 0.03:
             ai_evidence += 0.08
             signals.append("High-frequency detail looks thinner than a natural capture would usually produce.")
@@ -241,3 +268,40 @@ class LocalImageDetector:
         if not signals:
             signals.append("Frequency-domain evidence stayed close to neutral.")
         return score, list(dict.fromkeys(signals))
+
+    def _apply_consistency_guard(
+        self,
+        metadata_score: float,
+        artifact_score: float,
+        frequency_score: float,
+        stats: dict,
+    ) -> tuple[float, float, float, list[str]]:
+        signals: list[str] = []
+        scores = {
+            "metadata": metadata_score,
+            "artifact": artifact_score,
+            "frequency": frequency_score,
+        }
+        dominant_name, dominant_score = max(scores.items(), key=lambda item: item[1])
+        supporting_scores = [value for name, value in scores.items() if name != dominant_name]
+        supporting_average = sum(supporting_scores) / len(supporting_scores)
+
+        if dominant_score >= 0.82 and max(supporting_scores) <= 0.58:
+            scores[dominant_name] = clamp_score(dominant_score * 0.35 + supporting_average * 0.65)
+            signals.append(
+                "Only one heuristic family strongly suggested AI generation, so the local detector reduced that single-signal spike until other evidence agreed."
+            )
+
+        if (
+            scores["artifact"] > 0.66
+            and scores["metadata"] <= 0.52
+            and scores["frequency"] <= 0.52
+            and stats["local_noise"] > 0.0045
+            and stats["high_frequency_ratio"] > 0.2
+        ):
+            scores["artifact"] = clamp_score(scores["artifact"] * 0.3 + ((scores["metadata"] + scores["frequency"]) / 2) * 0.7)
+            signals.append(
+                "Camera-like texture and frequency evidence reduced a lone artifact spike to avoid overcalling edited real photos."
+            )
+
+        return scores["metadata"], scores["artifact"], scores["frequency"], list(dict.fromkeys(signals))

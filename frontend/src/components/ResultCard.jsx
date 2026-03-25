@@ -19,7 +19,9 @@ function badgeClass(label) {
 }
 
 function formatConfidence(value) {
-  return `${(Number(value || 0) * 100).toFixed(0)}%`;
+  const numeric = Number(value || 0);
+  const normalized = numeric > 1 ? numeric / 100 : numeric;
+  return `${(Math.max(0, Math.min(1, normalized)) * 100).toFixed(0)}%`;
 }
 
 export default function ResultCard({ result }) {

@@ -5,6 +5,7 @@ from results.models import DetectionResult
 
 class DetectionResultSerializer(serializers.ModelSerializer):
     uploaded_file_url = serializers.SerializerMethodField()
+    confidence_score = serializers.SerializerMethodField()
     providers_used = serializers.SerializerMethodField()
     audio_analysis_used = serializers.SerializerMethodField()
     audio_summary = serializers.SerializerMethodField()
@@ -43,6 +44,16 @@ class DetectionResultSerializer(serializers.ModelSerializer):
         if request is None:
             return obj.uploaded_file.url
         return request.build_absolute_uri(obj.uploaded_file.url)
+
+    def get_confidence_score(self, obj):
+        try:
+            value = float(obj.confidence_score or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+        if value > 1:
+            value /= 100
+        return round(max(0.0, min(1.0, value)), 4)
 
     def get_providers_used(self, obj):
         providers = obj.provider_used or []

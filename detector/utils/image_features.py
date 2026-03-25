@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-import numpy as np
 from PIL import Image, ImageChops, ImageFilter, ImageOps, ImageStat
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - fallback exercised in environments without numpy
+    np = None
 
 
 def prepare_working_image(image: Image.Image, max_dimension: int) -> Image.Image:
@@ -14,7 +18,7 @@ def _histogram_fill_ratio(histogram: list[int]) -> float:
     return sum(1 for value in histogram if value) / max(1, len(histogram))
 
 
-def _frequency_metrics(grayscale: Image.Image) -> dict[str, float]:
+def _frequency_metrics_fft(grayscale: Image.Image) -> dict[str, float]:
     spectrum_input = grayscale.resize((128, 128))
     values = np.asarray(spectrum_input, dtype=np.float32)
     fft = np.fft.fftshift(np.fft.fft2(values))
@@ -44,6 +48,45 @@ def _frequency_metrics(grayscale: Image.Image) -> dict[str, float]:
         "frequency_direction_bias": abs(row_mean - column_mean) / max(row_mean, column_mean, 1e-6),
         "spectral_spike_ratio": float((magnitude >= spike_threshold).sum() / magnitude.size),
     }
+
+
+def _frequency_metrics_fallback(grayscale: Image.Image) -> dict[str, float]:
+    spectrum_input = grayscale.resize((128, 128))
+    low_band = spectrum_input.filter(ImageFilter.GaussianBlur(radius=3.2))
+    mid_base = spectrum_input.filter(ImageFilter.GaussianBlur(radius=1.6))
+    mid_band = ImageChops.difference(mid_base, low_band)
+    high_band = ImageChops.difference(spectrum_input, mid_base)
+
+    low_energy = ImageStat.Stat(low_band).mean[0]
+    mid_energy = ImageStat.Stat(mid_band).mean[0]
+    high_energy = ImageStat.Stat(high_band).mean[0]
+    total_energy = max(low_energy + mid_energy + high_energy, 1e-6)
+
+    horizontal = spectrum_input.filter(
+        ImageFilter.Kernel((3, 3), [-1, -2, -1, 0, 0, 0, 1, 2, 1], scale=1)
+    )
+    vertical = spectrum_input.filter(
+        ImageFilter.Kernel((3, 3), [-1, 0, 1, -2, 0, 2, -1, 0, 1], scale=1)
+    )
+    horizontal_energy = ImageStat.Stat(horizontal).mean[0]
+    vertical_energy = ImageStat.Stat(vertical).mean[0]
+    high_histogram = high_band.histogram()
+    total_pixels = max(1, spectrum_input.width * spectrum_input.height)
+
+    return {
+        "low_frequency_ratio": float(low_energy / total_energy),
+        "mid_frequency_ratio": float(mid_energy / total_energy),
+        "high_frequency_ratio": float(high_energy / total_energy),
+        "frequency_direction_bias": abs(horizontal_energy - vertical_energy)
+        / max(horizontal_energy, vertical_energy, 1e-6),
+        "spectral_spike_ratio": float(sum(high_histogram[224:]) / total_pixels),
+    }
+
+
+def _frequency_metrics(grayscale: Image.Image) -> dict[str, float]:
+    if np is None:
+        return _frequency_metrics_fallback(grayscale)
+    return _frequency_metrics_fft(grayscale)
 
 
 def analyse_image_features(image: Image.Image) -> dict[str, float]:

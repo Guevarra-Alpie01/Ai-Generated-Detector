@@ -1,4 +1,14 @@
 export default function HistoryTable({ history, loading, page, onPageChange }) {
+  function labelClass(label) {
+    if (label === "AI-generated") {
+      return "text-bg-danger";
+    }
+    if (label === "Uncertain") {
+      return "text-bg-warning";
+    }
+    return "text-bg-success";
+  }
+
   return (
     <div className="card border-0 shadow-sm">
       <div className="card-body p-4">
@@ -37,15 +47,9 @@ export default function HistoryTable({ history, loading, page, onPageChange }) {
                   </td>
                   <td className="text-capitalize">{item.source_type}</td>
                   <td>
-                    <span
-                      className={`badge ${
-                        item.result_label === "AI-generated" ? "text-bg-danger" : "text-bg-success"
-                      }`}
-                    >
-                      {item.result_label}
-                    </span>
+                    <span className={`badge ${labelClass(item.result_label)}`}>{item.result_label}</span>
                   </td>
-                  <td>{Number(item.confidence_score).toFixed(2)}%</td>
+                  <td>{(Number(item.confidence_score || 0) * 100).toFixed(0)}%</td>
                   <td>{new Date(item.created_at).toLocaleString()}</td>
                 </tr>
               ))}

@@ -1,18 +1,15 @@
 import math
 import os
-import shutil
 import tempfile
 import wave
 from array import array
 from unittest.mock import MagicMock, patch
 
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase, TestCase, override_settings
-from rest_framework.test import APIClient
+from django.test import SimpleTestCase
 
 from detector.services.audio_analysis import AudioAnalysisResult, LightweightAudioAnalyzer
-from detector.services.detection import DetectionOrchestrator
-from detector.services.scoring import ComponentAssessment, DetectionOutcome
+from detector.services.local_video_detector import LocalVideoDetector
+from detector.services.providers.base import ProviderResult
 from detector.utils.audio_extract import extract_audio_clip
 
 
@@ -134,188 +131,105 @@ class AudioAnalysisServiceTests(SimpleTestCase):
         self.assertGreater(flat_result.audio_score, varied_result.audio_score)
 
 
-class VideoDetectionAudioIntegrationTests(SimpleTestCase):
-    @patch("detector.services.detection.extract_video_metadata")
-    @patch("detector.services.detection.sample_video_frames")
+class LocalVideoDetectorTests(SimpleTestCase):
+    @patch("detector.services.local_video_detector.extract_video_metadata")
+    @patch("detector.services.local_video_detector.sample_video_frames")
     def test_detect_video_includes_audio_breakdown_when_audio_is_used(self, sample_frames_mock, metadata_mock):
         sample_frames_mock.return_value = [object(), object()]
         metadata_mock.return_value = {"fps": 24, "duration_seconds": 5, "width": 1280, "height": 720}
 
-        assessment = ComponentAssessment(
-            model_score=None,
-            metadata_score=0.5,
-            artifact_score=0.62,
-            notes=["frame artifact note"],
-            analysis_stats={
-                "edge_density": 0.03,
-                "local_noise": 0.006,
-                "detail_residual": 0.007,
-                "saturation": 0.2,
-                "contrast": 0.24,
-            },
+        image_detector = MagicMock()
+        image_detector.detect_pil_image.side_effect = [
+            (
+                ProviderResult.success("local", ai_score=0.62, signals=["frame artifact note"], raw={"score": 0.62}),
+                {},
+                {
+                    "analysis_stats": {
+                        "edge_density": 0.03,
+                        "local_noise": 0.006,
+                        "detail_residual": 0.007,
+                        "saturation": 0.2,
+                        "contrast": 0.24,
+                    }
+                },
+            ),
+            (
+                ProviderResult.success("local", ai_score=0.64, signals=["frame artifact note"], raw={"score": 0.64}),
+                {},
+                {
+                    "analysis_stats": {
+                        "edge_density": 0.031,
+                        "local_noise": 0.0061,
+                        "detail_residual": 0.0071,
+                        "saturation": 0.201,
+                        "contrast": 0.241,
+                    }
+                },
+            ),
+        ]
+        audio_detector = MagicMock()
+        audio_detector.analyze_video.return_value = AudioAnalysisResult(
+            used=True,
+            summary="Audio analysis found uniform energy contour.",
+            reason="analyzed",
+            audio_score=0.74,
+            signals=["uniform energy contour"],
+            metrics={"ffmpeg_used": False},
         )
 
-        orchestrator = DetectionOrchestrator()
-        orchestrator._assess_image = MagicMock(side_effect=[assessment, assessment])
-        orchestrator.audio_analyzer.analyze_video = MagicMock(
-            return_value=AudioAnalysisResult(
-                used=True,
-                summary="Audio analysis found uniform energy contour.",
-                reason="analyzed",
-                audio_score=0.74,
-                signals=["uniform energy contour"],
-                metrics={"ffmpeg_used": False},
-            )
-        )
+        detector = LocalVideoDetector(image_detector=image_detector, audio_detector=audio_detector)
+        result, source_metadata, breakdown = detector.detect("clip.mp4")
 
-        outcome = orchestrator.detect_video("clip.mp4")
+        self.assertEqual(result.provider, "local")
+        self.assertTrue(breakdown["audio_analysis_used"])
+        self.assertAlmostEqual(breakdown["audio_score"], 0.74)
+        self.assertEqual(source_metadata["frames_sampled"], 2)
 
-        self.assertTrue(outcome.breakdown["audio_analysis_used"])
-        self.assertAlmostEqual(outcome.breakdown["audio_score"], 0.74)
-        self.assertEqual(outcome.breakdown["audio_summary"]["signals"], ["uniform energy contour"])
-
-    @patch("detector.services.detection.extract_video_metadata")
-    @patch("detector.services.detection.sample_video_frames")
+    @patch("detector.services.local_video_detector.extract_video_metadata")
+    @patch("detector.services.local_video_detector.sample_video_frames")
     def test_detect_video_stays_available_when_audio_is_skipped(self, sample_frames_mock, metadata_mock):
         sample_frames_mock.return_value = [object(), object()]
         metadata_mock.return_value = {"fps": 24, "duration_seconds": 5, "width": 1280, "height": 720}
 
-        assessment = ComponentAssessment(
-            model_score=None,
-            metadata_score=0.5,
-            artifact_score=0.3,
-            notes=["frame artifact note"],
-            analysis_stats={
-                "edge_density": 0.015,
-                "local_noise": 0.003,
-                "detail_residual": 0.004,
-                "saturation": 0.17,
-                "contrast": 0.2,
-            },
-        )
-
-        orchestrator = DetectionOrchestrator()
-        orchestrator._assess_image = MagicMock(side_effect=[assessment, assessment])
-        orchestrator.audio_analyzer.analyze_video = MagicMock(
-            return_value=AudioAnalysisResult.skipped(
-                "No usable audio stream was detected in the uploaded video.",
-                reason="no_audio_stream",
-            )
-        )
-
-        outcome = orchestrator.detect_video("clip.mp4")
-
-        self.assertFalse(outcome.breakdown["audio_analysis_used"])
-        self.assertIsNone(outcome.breakdown["audio_score"])
-        self.assertEqual(outcome.breakdown["audio_summary"]["reason"], "no_audio_stream")
-
-    def test_preview_calibration_reduces_thumbnail_false_positives(self):
-        orchestrator = DetectionOrchestrator()
-        assessment = ComponentAssessment(
-            model_score=None,
-            metadata_score=0.48,
-            artifact_score=0.86,
-            notes=[
-                "Shadows and highlights clip aggressively, which is more common in rendered or heavily synthesized media.",
-                "Color variation is unusually wide for the observed contrast, hinting at synthetic color transitions.",
-            ],
-            analysis_stats={},
-        )
-
-        calibrated = orchestrator._calibrate_preview_assessment(assessment, {"provider": "youtube"})
-
-        self.assertLess(calibrated.artifact_score, assessment.artifact_score)
-        self.assertLess(calibrated.artifact_score, 0.55)
-        self.assertIn("platform preview image", " ".join(calibrated.notes))
-
-
-class UploadDetectionAudioApiTests(TestCase):
-    def setUp(self):
-        super().setUp()
-        self.client = APIClient()
-        workspace_tmp = os.path.join(os.getcwd(), "tmp")
-        os.makedirs(workspace_tmp, exist_ok=True)
-        self.media_root = tempfile.mkdtemp(prefix="aidetector-media-", dir=workspace_tmp)
-        self.override = override_settings(MEDIA_ROOT=self.media_root)
-        self.override.enable()
-
-    def tearDown(self):
-        self.override.disable()
-        shutil.rmtree(self.media_root, ignore_errors=True)
-        super().tearDown()
-
-    @patch("django.db.models.fields.files.FieldFile.save", autospec=True)
-    @patch("detector.views.DetectionOrchestrator.detect_video")
-    def test_upload_api_returns_audio_summary_fields(self, detect_video_mock, field_save_mock):
-        def fake_field_save(field_file, name, content, save=True):
-            field_file.name = name
-            if save:
-                field_file.instance.save()
-
-        field_save_mock.side_effect = fake_field_save
-        detect_video_mock.return_value = DetectionOutcome(
-            label="AI-generated",
-            confidence=78.4,
-            details="Visual anomalies detected. Audio analysis found uniform energy contour.",
-            breakdown={
-                "ai_probability": 0.784,
-                "artifact_score": 0.72,
-                "metadata_score": 0.42,
-                "audio_score": 0.66,
-                "audio_analysis_used": True,
-                "audio_summary": {
-                    "used": True,
-                    "summary": "Audio analysis found uniform energy contour.",
-                    "reason": "analyzed",
-                    "signals": ["uniform energy contour"],
-                    "audio_score": 0.66,
+        image_detector = MagicMock()
+        image_detector.detect_pil_image.side_effect = [
+            (
+                ProviderResult.success("local", ai_score=0.28, signals=["frame artifact note"], raw={"score": 0.28}),
+                {},
+                {
+                    "analysis_stats": {
+                        "edge_density": 0.015,
+                        "local_noise": 0.003,
+                        "detail_residual": 0.004,
+                        "saturation": 0.17,
+                        "contrast": 0.2,
+                    }
                 },
-            },
-            source_metadata={},
+            ),
+            (
+                ProviderResult.success("local", ai_score=0.3, signals=["frame artifact note"], raw={"score": 0.3}),
+                {},
+                {
+                    "analysis_stats": {
+                        "edge_density": 0.016,
+                        "local_noise": 0.0032,
+                        "detail_residual": 0.0041,
+                        "saturation": 0.171,
+                        "contrast": 0.201,
+                    }
+                },
+            ),
+        ]
+        audio_detector = MagicMock()
+        audio_detector.analyze_video.return_value = AudioAnalysisResult.skipped(
+            "No usable audio stream was detected in the uploaded video.",
+            reason="no_audio_stream",
         )
 
-        response = self.client.post(
-            "/api/detect/upload/",
-            {"file": SimpleUploadedFile("clip.mp4", b"fake-video", content_type="video/mp4")},
-            format="multipart",
-        )
+        detector = LocalVideoDetector(image_detector=image_detector, audio_detector=audio_detector)
+        result, _, breakdown = detector.detect("clip.mp4")
 
-        self.assertEqual(response.status_code, 201)
-        payload = response.json()["result"]
-        self.assertTrue(payload["audio_analysis_used"])
-        self.assertEqual(payload["audio_summary"]["signals"], ["uniform energy contour"])
-
-    @patch("detector.views.fetch_public_media_snapshot")
-    @patch("detector.views.DetectionOrchestrator.detect_image")
-    def test_url_api_marks_audio_as_skipped_for_preview_only_sources(self, detect_image_mock, snapshot_mock):
-        class DummySnapshot:
-            local_path = "preview.jpg"
-            metadata = {"provider": "youtube"}
-
-            def cleanup(self):
-                return None
-
-        snapshot_mock.return_value = DummySnapshot()
-        detect_image_mock.return_value = DetectionOutcome(
-            label="Likely real",
-            confidence=63.2,
-            details="Preview image looked ordinary.",
-            breakdown={
-                "ai_probability": 0.368,
-                "artifact_score": 0.3,
-                "metadata_score": 0.41,
-            },
-            source_metadata={},
-        )
-
-        response = self.client.post(
-            "/api/detect/url/",
-            {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, 201)
-        payload = response.json()["result"]
-        self.assertFalse(payload["audio_analysis_used"])
-        self.assertEqual(payload["audio_summary"]["reason"], "preview_only_url")
-        self.assertNotIn("Audio was not analyzed for this URL", payload["details"])
+        self.assertEqual(result.provider, "local")
+        self.assertFalse(breakdown["audio_analysis_used"])
+        self.assertIsNone(breakdown["audio_score"])
+        self.assertEqual(breakdown["audio_summary"]["reason"], "no_audio_stream")

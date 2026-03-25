@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
+from detector.utils.temp_files import ensure_temp_dir
 from media_handler.constants import FACEBOOK_MEDIA_HOST_SUFFIXES, SourceTypes
 from media_handler.services.url_utils import extract_youtube_video_id
 
@@ -108,8 +109,7 @@ def _fetch_facebook_preview(url: str) -> PublicMediaSnapshot:
 
 def _download_remote_image(image_url: str) -> str:
     requests = _requests_module()
-    cache_dir = Path(settings.MEDIA_ROOT) / "url_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = ensure_temp_dir("url_cache")
 
     with requests.get(
         image_url,

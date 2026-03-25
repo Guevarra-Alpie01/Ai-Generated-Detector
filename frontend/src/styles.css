@@ -1,0 +1,44 @@
+:root {
+  --app-bg: #f4f1ea;
+  --app-ink: #102542;
+  --app-accent: #0d6efd;
+  --hero-top: #fffdf8;
+  --hero-bottom: #dce8f7;
+}
+
+body {
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.85), transparent 30%),
+    linear-gradient(180deg, var(--hero-top), var(--app-bg));
+  color: var(--app-ink);
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.hero-card {
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.92), rgba(220, 232, 247, 0.92)),
+    linear-gradient(180deg, var(--hero-top), var(--hero-bottom));
+  border: 1px solid rgba(16, 37, 66, 0.08);
+  box-shadow: 0 20px 60px rgba(16, 37, 66, 0.08);
+}
+
+.stats-panel {
+  border: 1px solid rgba(13, 110, 253, 0.12);
+}
+
+.upload-dropzone {
+  border-style: dashed !important;
+}
+
+.result-progress {
+  height: 1rem;
+}
+
+.history-source-cell {
+  max-width: 320px;
+  word-break: break-word;
+}

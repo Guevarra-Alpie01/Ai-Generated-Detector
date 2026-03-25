@@ -35,6 +35,7 @@ For a copy-paste-friendly Bash walkthrough, use [pythonanywhere_bash_setup.md](/
 ```bash
 export DJANGO_SECRET_KEY='replace-me'
 export DJANGO_DEBUG='False'
+export DJANGO_SECURE_SSL_REDIRECT='True'
 export DJANGO_ALLOWED_HOSTS='yourusername.pythonanywhere.com'
 export DJANGO_CSRF_TRUSTED_ORIGINS='https://yourusername.pythonanywhere.com'
 export TEMP_ANALYSIS_DIR='/home/yourusername/aidetector/tmp'

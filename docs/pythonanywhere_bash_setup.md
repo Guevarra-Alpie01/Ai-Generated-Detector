@@ -110,6 +110,7 @@ Minimum production values:
 ```bash
 DJANGO_SECRET_KEY=replace-this-with-a-long-random-secret
 DJANGO_DEBUG=False
+DJANGO_SECURE_SSL_REDIRECT=True
 DJANGO_ALLOWED_HOSTS=yourusername.pythonanywhere.com
 DJANGO_CSRF_TRUSTED_ORIGINS=https://yourusername.pythonanywhere.com
 DJANGO_TIME_ZONE=Asia/Manila

@@ -29,21 +29,29 @@ class LocalVideoDetector:
         video_path: str,
         source_metadata: dict | None = None,
     ) -> tuple[ProviderResult, dict, dict]:
+        video_metadata = extract_video_metadata(video_path)
+        analysis_limits = self._resolve_analysis_limits(video_metadata)
         frames = sample_video_frames(
             video_path,
-            max_seconds=settings.MAX_VIDEO_ANALYSIS_SECONDS,
-            max_frames=settings.MAX_VIDEO_FRAMES,
-            target_width=settings.MAX_VIDEO_PREVIEW_WIDTH,
+            max_seconds=analysis_limits["max_seconds"],
+            max_frames=analysis_limits["max_frames"],
+            target_width=analysis_limits["target_width"],
+            video_metadata=video_metadata,
         )
         if not frames:
             raise ValidationError("No video frames could be extracted from the uploaded MP4 file.")
 
-        video_metadata = extract_video_metadata(video_path)
-        audio_result = self.audio_detector.analyze_video(video_path)
+        audio_result = self.audio_detector.analyze_video(
+            video_path,
+            max_duration_seconds=analysis_limits["audio_seconds"],
+        )
         frame_scores: list[float] = []
         frame_stats: list[dict[str, float]] = []
         frame_summaries: list[dict[str, float | str | None]] = []
         signals: list[str] = []
+
+        if analysis_limits["fast_mode"]:
+            signals.append("Large upload was analyzed in fast mode to keep mobile and free-plan requests responsive.")
 
         for index, frame in enumerate(frames):
             frame_result, _, frame_breakdown = self.image_detector.detect_pil_image(frame, metadata={})
@@ -91,6 +99,9 @@ class LocalVideoDetector:
             "temporal_score": round(temporal_score, 4),
             "metadata_score": round(metadata_score, 4),
             "frames_sampled": len(frames),
+            "analysis_seconds": analysis_limits["max_seconds"],
+            "preview_width": analysis_limits["target_width"],
+            "fast_mode_applied": analysis_limits["fast_mode"],
             "frame_summaries": frame_summaries[: settings.MAX_VIDEO_FRAMES],
             "signals": unique_signals,
             **audio_result.as_breakdown(),
@@ -99,6 +110,9 @@ class LocalVideoDetector:
             **(source_metadata or {}),
             **video_metadata,
             "frames_sampled": len(frames),
+            "analysis_seconds": analysis_limits["max_seconds"],
+            "preview_width": analysis_limits["target_width"],
+            "fast_mode_applied": analysis_limits["fast_mode"],
         }
         raw_payload = sanitize_json_payload(
             {
@@ -122,6 +136,45 @@ class LocalVideoDetector:
             details=details,
         )
         return result, merged_source_metadata, breakdown
+
+    def _resolve_analysis_limits(self, metadata: dict) -> dict[str, int | bool]:
+        duration = float(metadata.get("duration_seconds") or 0.0)
+        width = int(metadata.get("width") or 0)
+        height = int(metadata.get("height") or 0)
+        pixel_count = width * height
+
+        max_seconds = settings.MAX_VIDEO_ANALYSIS_SECONDS
+        max_frames = settings.MAX_VIDEO_FRAMES
+        target_width = settings.MAX_VIDEO_PREVIEW_WIDTH
+        audio_seconds = settings.MAX_AUDIO_ANALYSIS_SECONDS
+        fast_mode = False
+
+        if duration > 10:
+            max_seconds = min(max_seconds, 8)
+            max_frames = min(max_frames, 3)
+            audio_seconds = min(audio_seconds, 6)
+            fast_mode = True
+
+        if pixel_count >= 1920 * 1080:
+            target_width = min(target_width, 720)
+            max_frames = min(max_frames, 3)
+            audio_seconds = min(audio_seconds, 5)
+            fast_mode = True
+
+        if pixel_count >= 2560 * 1440 or duration > 30:
+            max_seconds = min(max_seconds, 6)
+            max_frames = min(max_frames, 2)
+            target_width = min(target_width, 640)
+            audio_seconds = min(audio_seconds, 4)
+            fast_mode = True
+
+        return {
+            "max_seconds": max(2, int(max_seconds)),
+            "max_frames": max(2, int(max_frames)),
+            "target_width": max(320, int(target_width)),
+            "audio_seconds": max(3, int(audio_seconds)),
+            "fast_mode": fast_mode,
+        }
 
     def _score_video_metadata(self, metadata: dict) -> tuple[float, list[str]]:
         score = 0.5

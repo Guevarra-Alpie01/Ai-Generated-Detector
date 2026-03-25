@@ -131,9 +131,11 @@ class VideoUtilityFallbackTests(SimpleTestCase):
         metadata_mock,
     ):
         def create_frame(command, capture_output, text, timeout, check):
-            output_path = command[-1]
-            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-            Image.new("RGB", (640, 360), color=(120, 140, 180)).save(output_path, format="PNG")
+            output_pattern = command[-1]
+            output_dir = Path(output_pattern).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (640, 360), color=(120, 140, 180)).save(output_dir / "frame-001.png", format="PNG")
+            Image.new("RGB", (640, 360), color=(122, 142, 182)).save(output_dir / "frame-002.png", format="PNG")
             return MagicMock(returncode=0, stderr="")
 
         run_mock.side_effect = create_frame
@@ -165,6 +167,7 @@ class VideoUtilityFallbackTests(SimpleTestCase):
         load_cv2_mock.assert_called_once()
         resolve_ffmpeg_mock.assert_called_once()
         metadata_mock.assert_called_once()
+        run_mock.assert_called_once()
 
     @patch("media_handler.services.video_utils._resolve_ffmpeg_binary", return_value=None)
     @patch("media_handler.services.video_utils._load_cv2", return_value=None)

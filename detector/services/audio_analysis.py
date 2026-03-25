@@ -45,16 +45,17 @@ class AudioAnalysisResult:
 
 
 class LightweightAudioAnalyzer:
-    def analyze_video(self, video_path: str) -> AudioAnalysisResult:
+    def analyze_video(self, video_path: str, *, max_duration_seconds: int | None = None) -> AudioAnalysisResult:
         if not settings.ENABLE_AUDIO_ANALYSIS:
             return AudioAnalysisResult.skipped(
                 "Audio analysis is disabled by configuration.",
                 reason="disabled",
             )
 
+        duration_limit = max_duration_seconds or settings.MAX_AUDIO_ANALYSIS_SECONDS
         extraction = extract_audio_clip(
             video_path,
-            max_duration_seconds=settings.MAX_AUDIO_ANALYSIS_SECONDS,
+            max_duration_seconds=duration_limit,
             sample_rate=settings.AUDIO_ANALYSIS_SAMPLE_RATE,
             timeout_seconds=settings.AUDIO_ANALYSIS_TIMEOUT_SECONDS,
             ffmpeg_binary=settings.FFMPEG_BINARY,
@@ -65,7 +66,7 @@ class LightweightAudioAnalyzer:
                 reason=extraction.reason,
             )
 
-        return self._analyze_extracted_clip(extraction)
+        return self._analyze_extracted_clip(extraction, max_duration_seconds=duration_limit)
 
     def analyze_wav_clip(self, wav_path: str, *, used_ffmpeg: bool = False) -> AudioAnalysisResult:
         extraction = AudioExtractionResult(
@@ -75,7 +76,7 @@ class LightweightAudioAnalyzer:
             path=wav_path,
             used_ffmpeg=used_ffmpeg,
         )
-        return self._analyze_extracted_clip(extraction)
+        return self._analyze_extracted_clip(extraction, max_duration_seconds=settings.MAX_AUDIO_ANALYSIS_SECONDS)
 
     def preview_only_skip(
         self,
@@ -89,11 +90,16 @@ class LightweightAudioAnalyzer:
             reason=reason,
         )
 
-    def _analyze_extracted_clip(self, extraction: AudioExtractionResult) -> AudioAnalysisResult:
+    def _analyze_extracted_clip(
+        self,
+        extraction: AudioExtractionResult,
+        *,
+        max_duration_seconds: int,
+    ) -> AudioAnalysisResult:
         try:
             features = extract_audio_features(
                 extraction.path,
-                max_duration_seconds=settings.MAX_AUDIO_ANALYSIS_SECONDS,
+                max_duration_seconds=max_duration_seconds,
             )
         except Exception:
             return AudioAnalysisResult.skipped(

@@ -45,7 +45,13 @@ def extract_video_metadata(video_path: str) -> dict:
     }
 
 
-def sample_video_frames(video_path: str, max_seconds: int, max_frames: int, target_width: int):
+def sample_video_frames(
+    video_path: str,
+    max_seconds: int,
+    max_frames: int,
+    target_width: int,
+    video_metadata: dict | None = None,
+):
     cv2 = _load_cv2()
     if cv2 is None:
         return _sample_video_frames_with_ffmpeg(
@@ -53,6 +59,7 @@ def sample_video_frames(video_path: str, max_seconds: int, max_frames: int, targ
             max_seconds=max_seconds,
             max_frames=max_frames,
             target_width=target_width,
+            video_metadata=video_metadata,
         )
 
     capture = cv2.VideoCapture(video_path)
@@ -61,7 +68,7 @@ def sample_video_frames(video_path: str, max_seconds: int, max_frames: int, targ
 
     fps = capture.get(cv2.CAP_PROP_FPS) or 0
     frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    duration = frame_count / fps if fps else 0
+    duration = float((video_metadata or {}).get("duration_seconds") or 0) or (frame_count / fps if fps else 0)
     analysis_duration = min(duration, max_seconds) if duration else max_seconds
     effective_frame_count = int(analysis_duration * fps) if fps else frame_count
 
@@ -154,57 +161,63 @@ def _extract_video_metadata_with_ffprobe(video_path: str) -> dict:
     }
 
 
-def _sample_video_frames_with_ffmpeg(video_path: str, *, max_seconds: int, max_frames: int, target_width: int):
+def _sample_video_frames_with_ffmpeg(
+    video_path: str,
+    *,
+    max_seconds: int,
+    max_frames: int,
+    target_width: int,
+    video_metadata: dict | None = None,
+):
     ffmpeg_binary = _resolve_ffmpeg_binary()
     if not ffmpeg_binary:
         raise ValidationError(
             "Video frame extraction requires ffmpeg on this deployment. Set FFMPEG_BINARY or install ffmpeg to enable MP4 detection."
         )
 
-    metadata = extract_video_metadata(video_path)
+    metadata = video_metadata or extract_video_metadata(video_path)
     duration = float(metadata.get("duration_seconds") or 0.0)
     analysis_duration = min(duration, max_seconds) if duration else float(max_seconds)
     if analysis_duration <= 0 or max_frames <= 0:
         return []
 
-    if max_frames == 1:
-        timestamps = [0.0]
-    else:
-        interval = analysis_duration / (max_frames + 1)
-        timestamps = [round(interval * (index + 1), 3) for index in range(max_frames)]
-
     samples = []
     with tempfile.TemporaryDirectory(prefix="aidetector-frames-") as temp_dir:
-        for index, timestamp in enumerate(timestamps):
-            output_path = str(Path(temp_dir) / f"frame-{index}.png")
-            command = [
-                ffmpeg_binary,
-                "-nostdin",
-                "-y",
-                "-v",
-                "error",
-                "-ss",
-                str(max(0.0, timestamp)),
-                "-i",
-                video_path,
-                "-frames:v",
-                "1",
-                output_path,
-            ]
-            try:
-                completed = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-            except subprocess.TimeoutExpired:
-                continue
+        output_pattern = str(Path(temp_dir) / "frame-%03d.png")
+        sample_rate = max_frames / max(analysis_duration, 1.0)
+        command = [
+            ffmpeg_binary,
+            "-nostdin",
+            "-y",
+            "-v",
+            "error",
+            "-t",
+            str(round(analysis_duration, 3)),
+            "-i",
+            video_path,
+            "-vf",
+            f"fps={sample_rate:.4f},scale=min(iw\\,{target_width}):-2:flags=lanczos",
+            "-frames:v",
+            str(max_frames),
+            output_pattern,
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=max(12, int(analysis_duration * 2) + 6),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            completed = None
 
-            if completed.returncode != 0 or not os.path.exists(output_path):
-                continue
+        if completed is None or completed.returncode != 0:
+            return []
 
+        for output_path in sorted(Path(temp_dir).glob("frame-*.png"))[:max_frames]:
+            if not os.path.exists(output_path):
+                continue
             with Image.open(output_path) as frame_image:
                 pil_image = frame_image.convert("RGB")
                 if pil_image.width > target_width:

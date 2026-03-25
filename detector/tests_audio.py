@@ -184,6 +184,8 @@ class LocalVideoDetectorTests(SimpleTestCase):
         self.assertTrue(breakdown["audio_analysis_used"])
         self.assertAlmostEqual(breakdown["audio_score"], 0.74)
         self.assertEqual(source_metadata["frames_sampled"], 2)
+        sample_frames_mock.assert_called_once()
+        audio_detector.analyze_video.assert_called_once_with("clip.mp4", max_duration_seconds=10)
 
     @patch("detector.services.local_video_detector.extract_video_metadata")
     @patch("detector.services.local_video_detector.sample_video_frames")
@@ -233,3 +235,42 @@ class LocalVideoDetectorTests(SimpleTestCase):
         self.assertFalse(breakdown["audio_analysis_used"])
         self.assertIsNone(breakdown["audio_score"])
         self.assertEqual(breakdown["audio_summary"]["reason"], "no_audio_stream")
+
+    @patch("detector.services.local_video_detector.extract_video_metadata")
+    @patch("detector.services.local_video_detector.sample_video_frames")
+    def test_detect_video_uses_fast_mode_limits_for_large_uploads(self, sample_frames_mock, metadata_mock):
+        sample_frames_mock.return_value = [object(), object()]
+        metadata_mock.return_value = {"fps": 30, "duration_seconds": 32, "width": 2560, "height": 1440}
+
+        image_detector = MagicMock()
+        image_detector.detect_pil_image.side_effect = [
+            (
+                ProviderResult.success("local", ai_score=0.41, signals=["frame note"], raw={"score": 0.41}),
+                {},
+                {"analysis_stats": {"edge_density": 0.02, "local_noise": 0.004, "detail_residual": 0.005, "saturation": 0.19, "contrast": 0.22}},
+            ),
+            (
+                ProviderResult.success("local", ai_score=0.43, signals=["frame note"], raw={"score": 0.43}),
+                {},
+                {"analysis_stats": {"edge_density": 0.021, "local_noise": 0.0042, "detail_residual": 0.0051, "saturation": 0.191, "contrast": 0.221}},
+            ),
+        ]
+        audio_detector = MagicMock()
+        audio_detector.analyze_video.return_value = AudioAnalysisResult.skipped(
+            "Audio was skipped in fast mode.",
+            reason="fast_mode_skip",
+        )
+
+        detector = LocalVideoDetector(image_detector=image_detector, audio_detector=audio_detector)
+        _, source_metadata, breakdown = detector.detect("clip.mp4")
+
+        sample_frames_mock.assert_called_once_with(
+            "clip.mp4",
+            max_seconds=6,
+            max_frames=2,
+            target_width=640,
+            video_metadata=metadata_mock.return_value,
+        )
+        audio_detector.analyze_video.assert_called_once_with("clip.mp4", max_duration_seconds=4)
+        self.assertTrue(source_metadata["fast_mode_applied"])
+        self.assertTrue(breakdown["fast_mode_applied"])

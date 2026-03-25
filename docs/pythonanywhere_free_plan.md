@@ -8,6 +8,7 @@ For a copy-paste-friendly Bash walkthrough, use [pythonanywhere_bash_setup.md](/
 - Keeps inference synchronous and CPU-only.
 - Always runs a lightweight local fallback first, so uploads still complete when external APIs are disabled, slow, or out of quota.
 - Limits uploaded media size and shortens video analysis to a few frames.
+- Avoids the large OpenCV wheel in the default install, using `ffmpeg/ffprobe` for bounded video frame extraction instead.
 - Limits audio analysis to a short mono clip and skips it entirely if ffmpeg is unavailable or the source has no usable audio stream.
 - Uses thumbnail or preview extraction for public YouTube and Facebook URLs instead of downloading whole remote videos.
 - Avoids background workers, Redis, Celery, and browser automation.

@@ -61,6 +61,13 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+If you previously hit a disk-quota error during `pip install`, clear the failed wheel cache and retry:
+
+```bash
+rm -rf ~/.cache/pip
+pip install -r requirements.txt
+```
+
 ## 5. Upload the built frontend
 
 Build the React frontend on your own machine, then upload the generated `frontend/dist/` folder together with the project.
@@ -137,7 +144,7 @@ Optional admin user:
 python manage.py createsuperuser
 ```
 
-Check whether `ffmpeg` is available for local audio analysis:
+Check whether `ffmpeg` is available for local audio and video analysis:
 
 ```bash
 which ffmpeg || echo "ffmpeg not found"

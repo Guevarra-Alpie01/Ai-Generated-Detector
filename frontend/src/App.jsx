@@ -52,7 +52,7 @@ export default function App() {
       startTransition(() => {
         setLatestResult(payload.result);
       });
-      await loadHistory(1);
+      loadHistory(1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -69,7 +69,7 @@ export default function App() {
       startTransition(() => {
         setLatestResult(payload.result);
       });
-      await loadHistory(1);
+      loadHistory(1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {

@@ -5,6 +5,7 @@
 - Uses SQLite and filesystem storage only.
 - Keeps inference synchronous and CPU-only.
 - Limits uploaded media size and shortens video analysis to a few frames.
+- Limits audio analysis to a short mono clip and skips it entirely if ffmpeg is unavailable or the source has no usable audio stream.
 - Avoids background workers, Redis, Celery, and browser automation.
 
 ## Recommended deployment flow
@@ -29,6 +30,11 @@ export DJANGO_SECRET_KEY='replace-me'
 export DJANGO_DEBUG='False'
 export DJANGO_ALLOWED_HOSTS='yourusername.pythonanywhere.com'
 export DJANGO_CSRF_TRUSTED_ORIGINS='https://yourusername.pythonanywhere.com'
+export ENABLE_AUDIO_ANALYSIS='True'
+export MAX_AUDIO_ANALYSIS_SECONDS='10'
+export AUDIO_ANALYSIS_SAMPLE_RATE='16000'
+export AUDIO_ANALYSIS_TIMEOUT_SECONDS='8'
+export FFMPEG_BINARY='ffmpeg'
 ```
 
 ## Static and media handling
@@ -43,3 +49,4 @@ export DJANGO_CSRF_TRUSTED_ORIGINS='https://yourusername.pythonanywhere.com'
 - Free accounts are not ideal for running a Node build pipeline on-host, so it is safer to build React locally and upload the generated assets.
 - Facebook preview extraction depends on publicly accessible Open Graph metadata; private or login-gated links will fail validation.
 - YouTube URL analysis intentionally uses thumbnails only to keep latency and CPU usage predictable.
+- Audio extraction prefers `ffmpeg` when it is available. If `ffmpeg` is missing or the source video has no usable audio stream, the request falls back to visual-only scoring instead of failing.

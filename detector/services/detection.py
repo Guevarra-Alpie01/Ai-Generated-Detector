@@ -5,7 +5,13 @@ import statistics
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
-from detector.services.scoring import ComponentAssessment, DetectionOutcome, label_from_probability, weighted_score
+from detector.services.scoring import (
+    ComponentAssessment,
+    DetectionOutcome,
+    clamp_score,
+    label_from_probability,
+    weighted_score,
+)
 from detector.utils.image_analysis import analyse_image_statistics
 from media_handler.services.image_utils import load_preprocessed_image
 from media_handler.services.video_utils import extract_video_metadata, sample_video_frames
@@ -19,11 +25,11 @@ class OptionalOnnxImageScorer:
     the API surface.
     """
 
-    def score(self, image) -> tuple[float, str]:
+    def score(self, image) -> tuple[float | None, str]:
         model_path = settings.AI_DETECTION_MODEL_PATH
         if not model_path:
-            return 0.5, "No ONNX model configured; using heuristic scoring only."
-        return 0.5, "ONNX model path configured, but model-specific preprocessing is not wired yet."
+            return None, ""
+        return None, "ONNX model path is configured, but model-specific preprocessing is not wired yet."
 
 
 class DetectionOrchestrator:
@@ -72,6 +78,7 @@ class DetectionOrchestrator:
         frame_probabilities = []
         model_scores = []
         artifact_scores = []
+        frame_stats = []
         notes: list[str] = []
 
         for frame in frames:
@@ -85,26 +92,26 @@ class DetectionOrchestrator:
                 settings.DETECTION_WEIGHTS["image"],
             )
             frame_probabilities.append(frame_ai_probability)
-            model_scores.append(assessment.model_score)
+            if assessment.model_score is not None:
+                model_scores.append(assessment.model_score)
             artifact_scores.append(assessment.artifact_score)
-            notes.extend(assessment.notes[:1])
+            frame_stats.append(assessment.analysis_stats)
+            notes.extend(assessment.notes[:2])
 
         frame_score = sum(frame_probabilities) / len(frame_probabilities)
         metadata_score, metadata_notes = self._score_video_metadata(video_metadata)
         notes.extend(metadata_notes)
-
-        if len(frame_probabilities) > 1:
-            deviation = statistics.pstdev(frame_probabilities)
-            temporal_consistency = max(0.0, 0.7 - deviation * 2)
-        else:
-            temporal_consistency = 0.45
+        temporal_score, temporal_notes = self._score_video_temporal_artifacts(frame_stats, frame_probabilities)
+        notes.extend(temporal_notes)
+        combined_frame_score = clamp_score(frame_score * 0.7 + temporal_score * 0.3)
+        average_model_score = round(sum(model_scores) / len(model_scores), 4) if model_scores else None
 
         ai_probability = weighted_score(
             {
-                "model_score": sum(model_scores) / len(model_scores),
+                "model_score": average_model_score,
                 "metadata_score": metadata_score,
                 "artifact_score": sum(artifact_scores) / len(artifact_scores),
-                "frame_score": max(frame_score, temporal_consistency),
+                "frame_score": combined_frame_score,
             },
             settings.DETECTION_WEIGHTS["video"],
         )
@@ -121,11 +128,11 @@ class DetectionOrchestrator:
             confidence=confidence,
             details=details,
             breakdown={
-                "model_score": round(sum(model_scores) / len(model_scores), 4),
+                "model_score": average_model_score,
                 "metadata_score": round(metadata_score, 4),
                 "artifact_score": round(sum(artifact_scores) / len(artifact_scores), 4),
-                "frame_score": round(max(frame_score, temporal_consistency), 4),
-                "temporal_consistency": round(temporal_consistency, 4),
+                "frame_score": round(combined_frame_score, 4),
+                "temporal_score": round(temporal_score, 4),
                 "ai_probability": ai_probability,
                 "notes": list(dict.fromkeys(notes)),
             },
@@ -158,64 +165,148 @@ class DetectionOrchestrator:
             metadata_score=metadata_score,
             artifact_score=artifact_score,
             notes=list(dict.fromkeys(notes)),
+            analysis_stats=stats,
         )
 
     def _score_image_metadata(self, metadata: dict) -> tuple[float, list[str]]:
         notes: list[str] = []
-        lowered_values = " ".join(str(value).lower() for value in metadata.values())
+        lowered_values = " ".join(f"{key}:{value}".lower() for key, value in metadata.items())
+        camera_metadata_keys = (
+            "Make",
+            "Model",
+            "LensMake",
+            "LensModel",
+            "DateTimeOriginal",
+            "ExposureTime",
+            "FNumber",
+            "FocalLength",
+            "ISOSpeedRatings",
+            "PhotographicSensitivity",
+        )
+        technical_keys = {
+            "image_format",
+            "color_mode",
+            "has_alpha",
+            "icc_profile_present",
+            "progressive",
+            "progression",
+            "analysis_stats",
+        }
 
         for keyword in settings.AI_METADATA_KEYWORDS:
             if keyword in lowered_values:
                 notes.append(f"Metadata references `{keyword}`, which is commonly associated with AI generation.")
-                return 0.95, notes
+                return 0.98, notes
 
-        if metadata.get("Software"):
+        camera_hits = [key for key in camera_metadata_keys if metadata.get(key)]
+        if camera_hits:
+            notes.append(
+                "Camera acquisition metadata is present, which strongly supports a real capture pipeline."
+            )
+            return (0.08 if len(camera_hits) >= 3 else 0.16), notes
+
+        software_value = str(metadata.get("Software", "")).strip()
+        format_name = str(metadata.get("image_format", "")).upper()
+        descriptive_entries = [
+            key for key, value in metadata.items() if key not in technical_keys and key != "Software" and value
+        ]
+
+        if software_value:
             notes.append("Software metadata exists but does not explicitly identify an AI generator.")
-            return 0.32, notes
+            return 0.46, notes
 
-        if metadata:
-            notes.append("Image metadata is sparse, which is mildly suspicious but common after social uploads.")
-            return 0.38, notes
+        if format_name == "PNG" and not descriptive_entries:
+            notes.append(
+                "This PNG export has no acquisition metadata, which is slightly more common for rendered media than direct camera captures."
+            )
+            return 0.56, notes
 
-        notes.append("No embedded image metadata was available for cross-checking.")
-        return 0.4, notes
+        if format_name == "JPEG" and metadata.get("icc_profile_present") and not descriptive_entries:
+            notes.append(
+                "The file keeps JPEG color-profile data, which is common for camera photos but not conclusive on its own."
+            )
+            return 0.44, notes
+
+        if descriptive_entries:
+            notes.append("Metadata is present but does not clearly identify either a camera or an AI generator.")
+            return 0.48, notes
+
+        notes.append(
+            "No embedded image metadata was available for cross-checking, so the decision leans more on visible artifacts."
+        )
+        return 0.5, notes
 
     def _score_image_artifacts(self, stats: dict) -> tuple[float, list[str]]:
-        score = 0.24
+        ai_evidence = 0.0
+        real_evidence = 0.0
         notes: list[str] = []
+        clip_total = stats["shadow_clip"] + stats["highlight_clip"]
 
-        if stats["edge_density"] < 0.055:
-            score += 0.20
-            notes.append("Edge density is unusually low, suggesting over-smoothed surfaces.")
-        elif stats["edge_density"] > 0.23:
-            score += 0.10
-            notes.append("Edges appear overly crisp, which can happen in synthetic renders.")
-        else:
-            score -= 0.04
+        if (
+            stats["edge_density"] < 0.016
+            and stats["local_noise"] < 0.004
+            and stats["detail_residual"] < 0.01
+        ):
+            if clip_total < 0.004 and stats["saturation"] < 0.28 and 7.1 <= stats["entropy"] <= 7.8:
+                real_evidence += 0.22
+                notes.append(
+                    "Texture is smooth, but the tonal roll-off and restrained colors still look photographic."
+                )
+            else:
+                ai_evidence += 0.22
+                notes.append("Textures look unusually smooth, which can happen when generative models suppress natural noise.")
+        elif (
+            stats["edge_density"] > 0.022
+            and stats["detail_residual"] > 0.006
+            and stats["saturation_spread"] > 0.18
+        ):
+            ai_evidence += 0.24
+            notes.append("Edges, micro-contrast, and color spread are all elevated, which is common in synthetic renders.")
+        elif (
+            0.01 <= stats["edge_density"] <= 0.05
+            and stats["detail_residual"] <= 0.006
+            and stats["saturation_spread"] < 0.16
+        ):
+            real_evidence += 0.14
+            notes.append("Edge strength and texture detail stay within a camera-like range.")
 
-        if stats["local_noise"] < 0.025:
-            score += 0.14
-            notes.append("Local texture noise is limited compared with typical camera sensor patterns.")
-        else:
-            score -= 0.05
+        if clip_total > 0.025:
+            ai_evidence += 0.16
+            notes.append("Shadows and highlights clip aggressively, which is more common in rendered or heavily synthesized media.")
+        elif clip_total < 0.004:
+            real_evidence += 0.12
+            notes.append("The tonal histogram avoids harsh clipping, which supports a natural capture.")
 
-        if stats["entropy"] < 5.3:
-            score += 0.12
-            notes.append("Tonal entropy is low, which can indicate synthetic texture repetition.")
-        elif stats["entropy"] > 6.6:
-            score -= 0.05
+        if stats["saturation_spread"] > 0.18 and stats["contrast"] >= 0.18:
+            ai_evidence += 0.12
+            notes.append("Color variation is unusually wide for the observed contrast, hinting at synthetic color transitions.")
+        elif stats["saturation_spread"] < 0.14 and stats["saturation"] < 0.26:
+            real_evidence += 0.08
+            notes.append("Color variation is restrained and consistent with a camera capture.")
 
-        if stats["saturation"] > 0.55 and stats["contrast"] < 0.18:
-            score += 0.10
-            notes.append("High saturation combined with soft contrast is a recurring AI-artifact pattern.")
+        if stats["entropy"] > 7.6 and stats["detail_residual"] > 0.006:
+            ai_evidence += 0.10
+            notes.append("Very high tonal complexity paired with strong local detail can indicate generated textures.")
+        elif 7.1 <= stats["entropy"] <= 7.6 and stats["detail_residual"] < 0.005 and clip_total < 0.01:
+            real_evidence += 0.06
 
-        if 0.08 <= stats["edge_density"] <= 0.18 and stats["local_noise"] >= 0.03:
-            score -= 0.05
+        if (
+            stats["histogram_fill"] > 0.97
+            and stats["saturation_histogram_fill"] > 0.95
+            and clip_total > 0.02
+        ):
+            ai_evidence += 0.08
+            notes.append(
+                "The export uses almost the full tonal and saturation range, which is more common in rendered imagery than phone photos."
+            )
 
-        return max(0.0, min(1.0, round(score, 4))), notes
+        score = clamp_score(0.5 + ai_evidence - real_evidence)
+        if not notes:
+            notes.append("Visual artifact checks were mixed, so the image stays near a neutral score.")
+        return score, list(dict.fromkeys(notes))
 
     def _score_video_metadata(self, metadata: dict) -> tuple[float, list[str]]:
-        score = 0.28
+        score = 0.5
         notes: list[str] = []
 
         fps = metadata.get("fps", 0)
@@ -224,10 +315,12 @@ class DetectionOrchestrator:
         height = metadata.get("height", 0)
 
         if not fps or fps < 10:
-            score += 0.10
+            score += 0.12
             notes.append("Frame rate is unusually low for organic capture.")
+        elif 20 <= fps <= 60:
+            score -= 0.08
         elif fps > 60:
-            score += 0.08
+            score += 0.06
             notes.append("Frame rate is unusually high for user-generated social clips.")
 
         if duration and duration > settings.MAX_VIDEO_ANALYSIS_SECONDS:
@@ -244,4 +337,46 @@ class DetectionOrchestrator:
         if not notes:
             notes.append("Video container metadata looks ordinary for a short social clip.")
 
-        return max(0.0, min(1.0, round(score, 4))), notes
+        return clamp_score(score), notes
+
+    def _score_video_temporal_artifacts(
+        self,
+        frame_stats: list[dict[str, float]],
+        frame_probabilities: list[float],
+    ) -> tuple[float, list[str]]:
+        if len(frame_probabilities) <= 1 or len(frame_stats) <= 1:
+            return 0.5, ["Only one frame could be sampled, so temporal consistency could not be measured reliably."]
+
+        probability_deviation = statistics.pstdev(frame_probabilities)
+        feature_deltas = []
+
+        for previous, current in zip(frame_stats, frame_stats[1:]):
+            feature_deltas.append(
+                abs(current["edge_density"] - previous["edge_density"]) * 4
+                + abs(current["local_noise"] - previous["local_noise"]) * 16
+                + abs(current["detail_residual"] - previous["detail_residual"]) * 10
+                + abs(current["saturation"] - previous["saturation"]) * 3
+                + abs(current["contrast"] - previous["contrast"]) * 3
+            )
+
+        mean_delta = sum(feature_deltas) / len(feature_deltas)
+        score = 0.5
+        notes: list[str] = []
+
+        if probability_deviation > 0.12:
+            score += 0.18
+            notes.append("Frame-by-frame scores fluctuate sharply, which can indicate temporal AI artifacts or flicker.")
+        elif probability_deviation < 0.04:
+            score -= 0.06
+
+        if mean_delta > 0.22:
+            score += 0.18
+            notes.append("Neighbouring frames change in texture and contrast faster than a stable capture normally would.")
+        elif mean_delta < 0.09:
+            score -= 0.06
+            notes.append("Texture and contrast stay relatively stable across the sampled frames.")
+
+        if not notes:
+            notes.append("Temporal artifact checks were mixed across the sampled frames.")
+
+        return clamp_score(score), notes

@@ -4,7 +4,6 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
-FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -107,8 +106,8 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = []
-if FRONTEND_ASSETS_DIR.exists():
-    STATICFILES_DIRS.append(FRONTEND_ASSETS_DIR)
+if FRONTEND_DIST_DIR.exists():
+    STATICFILES_DIRS.append(FRONTEND_DIST_DIR)
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"

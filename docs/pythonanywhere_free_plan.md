@@ -1,5 +1,7 @@
 # PythonAnywhere Free Plan Deployment Notes
 
+For a copy-paste-friendly Bash walkthrough, use [pythonanywhere_bash_setup.md](/c:/Users/arroy/Desktop/aidetector/docs/pythonanywhere_bash_setup.md).
+
 ## Why this design fits the free plan
 
 - Uses SQLite and filesystem storage only.
@@ -16,13 +18,14 @@
 1. Build the React frontend locally or on another machine with Node available.
 2. Upload the repository with the generated `frontend/dist/` folder included.
 3. Create a Python 3.13 virtualenv on PythonAnywhere and install `requirements.txt`.
-4. Set environment variables in the WSGI file or Bash console.
+4. Copy `.env.example` to `.pythonanywhere.env` and set production values there.
 5. Run:
    - `python manage.py migrate`
    - `python manage.py collectstatic --noinput`
+   - `python manage.py check --deploy`
 6. Point the PythonAnywhere web app to:
    - code: project root
-   - WSGI file: your Django `main/wsgi.py`
+   - WSGI file: PythonAnywhere's generated `/var/www/..._wsgi.py`, configured to import `main.wsgi`
    - static URL: `/static/`
    - media URL: `/media/`
 
@@ -66,7 +69,10 @@ export REALITY_DEFENDER_SOFT_LIMIT_PER_DAY='20'
 ## Operational notes
 
 - Free accounts are not ideal for running a Node build pipeline on-host, so it is safer to build React locally and upload the generated assets.
+- This project now auto-loads a project-level `.pythonanywhere.env` file from `manage.py`, `main/wsgi.py`, and `main/asgi.py`, so one env file can drive both Bash commands and the live web app.
+- The deployed frontend calls relative `/api/...` URLs, so the recommended PythonAnywhere setup is one Django site serving both UI and API on the same domain.
 - Keep `ILLUMINARTY_ENABLED` and `REALITY_DEFENDER_ENABLED` off until the matching credentials and endpoint URLs are present. Disabled providers are skipped cleanly and the local fallback still runs.
+- Free PythonAnywhere accounts only have outbound access to allowlisted domains. If the Illuminarty or Reality Defender API domains are not on PythonAnywhere's allowlist, those providers will fail on the free plan and the local fallback will remain the active path unless you request allowlisting or upgrade to a paid account.
 - Reality Defender is integrated behind a soft daily quota guard in SQLite. If the local guard reaches its limit or the API returns quota/rate-limit errors, the request falls back to local analysis instead of failing outright.
 - Facebook preview extraction depends on publicly accessible Open Graph metadata; private or login-gated links will fail validation.
 - Facebook public links can use a small preview video when one is exposed publicly, which allows bounded local audio analysis without downloading the full original post.

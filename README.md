@@ -32,4 +32,9 @@ aidetector/
 
 ## Deployment
 
-PythonAnywhere-specific notes live in [docs/pythonanywhere_free_plan.md](/c:/Users/arroy/Desktop/aidetector/docs/pythonanywhere_free_plan.md).
+Deploy this app on PythonAnywhere as a single Django site that serves both the built React frontend and the `/api/...` endpoints. The frontend already uses relative API paths, so same-origin deployment keeps the API connected without adding CORS middleware.
+
+PythonAnywhere docs:
+
+- Free-plan constraints and operational notes: [docs/pythonanywhere_free_plan.md](/c:/Users/arroy/Desktop/aidetector/docs/pythonanywhere_free_plan.md)
+- Bash-first step-by-step setup guide: [docs/pythonanywhere_bash_setup.md](/c:/Users/arroy/Desktop/aidetector/docs/pythonanywhere_bash_setup.md)

@@ -3,9 +3,12 @@
 import os
 import sys
 
+from main.env_loader import load_default_env_file
+
 
 def main():
     """Run administrative tasks."""
+    load_default_env_file()
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'main.settings')
     try:
         from django.core.management import execute_from_command_line

@@ -79,7 +79,7 @@ class LightweightAudioAnalyzer:
 
     def preview_only_skip(self) -> AudioAnalysisResult:
         return AudioAnalysisResult.skipped(
-            "Audio analysis was skipped because URL detection currently analyzes a preview image only.",
+            "Audio was not analyzed for this URL because preview mode only inspects the public thumbnail, not the full video stream.",
             reason="preview_only_url",
         )
 

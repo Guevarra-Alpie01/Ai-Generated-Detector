@@ -60,7 +60,7 @@ def extract_audio_clip(
     resolved_ffmpeg = ffmpeg_binary or shutil.which(os.environ.get("FFMPEG_BINARY", "ffmpeg"))
     if not resolved_ffmpeg:
         return AudioExtractionResult.skipped(
-            "Audio analysis was skipped because ffmpeg is not available in this environment.",
+            "Audio analysis was skipped because this deployment cannot find ffmpeg. Install ffmpeg or set FFMPEG_BINARY to enable video-audio checks.",
             reason="ffmpeg_unavailable",
         )
 

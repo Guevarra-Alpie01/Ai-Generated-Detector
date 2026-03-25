@@ -209,6 +209,25 @@ class VideoDetectionAudioIntegrationTests(SimpleTestCase):
         self.assertIsNone(outcome.breakdown["audio_score"])
         self.assertEqual(outcome.breakdown["audio_summary"]["reason"], "no_audio_stream")
 
+    def test_preview_calibration_reduces_thumbnail_false_positives(self):
+        orchestrator = DetectionOrchestrator()
+        assessment = ComponentAssessment(
+            model_score=None,
+            metadata_score=0.48,
+            artifact_score=0.86,
+            notes=[
+                "Shadows and highlights clip aggressively, which is more common in rendered or heavily synthesized media.",
+                "Color variation is unusually wide for the observed contrast, hinting at synthetic color transitions.",
+            ],
+            analysis_stats={},
+        )
+
+        calibrated = orchestrator._calibrate_preview_assessment(assessment, {"provider": "youtube"})
+
+        self.assertLess(calibrated.artifact_score, assessment.artifact_score)
+        self.assertLess(calibrated.artifact_score, 0.55)
+        self.assertIn("platform preview image", " ".join(calibrated.notes))
+
 
 class UploadDetectionAudioApiTests(TestCase):
     def setUp(self):
@@ -299,3 +318,4 @@ class UploadDetectionAudioApiTests(TestCase):
         payload = response.json()["result"]
         self.assertFalse(payload["audio_analysis_used"])
         self.assertEqual(payload["audio_summary"]["reason"], "preview_only_url")
+        self.assertNotIn("Audio was not analyzed for this URL", payload["details"])

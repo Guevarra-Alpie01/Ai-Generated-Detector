@@ -20,6 +20,17 @@ export default function ResultCard({ result }) {
 
   const source = result.original_filename || result.source_url || result.source_type;
   const audioSummary = result.audio_summary;
+  const audioReason = audioSummary?.reason;
+  const audioBadgeLabel = result.audio_analysis_used
+    ? "Audio analyzed"
+    : audioReason === "preview_only_url"
+      ? "Preview image only"
+      : audioReason === "ffmpeg_unavailable"
+        ? "Audio unavailable"
+        : audioReason === "no_audio_stream"
+          ? "No audio stream"
+          : "Audio skipped";
+  const audioBadgeClass = result.audio_analysis_used ? "text-bg-primary" : "text-bg-secondary";
 
   return (
     <div className="card border-0 shadow-sm">
@@ -84,9 +95,7 @@ export default function ResultCard({ result }) {
           <div className="rounded-4 bg-light p-3 mt-3">
             <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
               <div className="small text-uppercase text-secondary fw-semibold">Audio</div>
-              <span className={`badge ${result.audio_analysis_used ? "text-bg-primary" : "text-bg-secondary"}`}>
-                {result.audio_analysis_used ? "Audio analyzed" : "Audio skipped"}
-              </span>
+              <span className={`badge ${audioBadgeClass}`}>{audioBadgeLabel}</span>
             </div>
             <p className="small mb-2">{audioSummary.summary || "No usable audio detected."}</p>
             {Array.isArray(audioSummary.signals) && audioSummary.signals.length > 0 && (

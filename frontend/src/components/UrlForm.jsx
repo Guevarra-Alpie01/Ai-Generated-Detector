@@ -36,7 +36,7 @@ export default function UrlForm({ loading, onSubmit }) {
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div>
             <h2 className="h5 mb-1">Analyze URL</h2>
-            <p className="text-secondary mb-0">Public YouTube thumbnails and Facebook previews only.</p>
+            <p className="text-secondary mb-0">Public YouTube thumbnails and Facebook previews only. Full video and audio are not fetched in URL mode.</p>
           </div>
           <span className="badge text-bg-light">Preview-based</span>
         </div>

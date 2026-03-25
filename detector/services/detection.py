@@ -44,6 +44,8 @@ class DetectionOrchestrator:
             metadata.update(external_metadata)
 
         assessment = self._assess_image(image, metadata)
+        if self._is_preview_based_source(metadata):
+            assessment = self._calibrate_preview_assessment(assessment, metadata)
         ai_probability = weighted_score(
             {
                 "model_score": assessment.model_score,
@@ -173,6 +175,40 @@ class DetectionOrchestrator:
             artifact_score=artifact_score,
             notes=list(dict.fromkeys(notes)),
             analysis_stats=stats,
+        )
+
+    def _is_preview_based_source(self, metadata: dict) -> bool:
+        return bool(metadata.get("preview_strategy") or metadata.get("provider") in {"youtube", "facebook"})
+
+    def _calibrate_preview_assessment(self, assessment: ComponentAssessment, metadata: dict) -> ComponentAssessment:
+        provider = str(metadata.get("provider", "")).lower()
+        artifact_baseline = 0.42 if provider == "youtube" else 0.45
+        artifact_factor = 0.18 if provider == "youtube" else 0.22
+        adjusted_artifact_score = clamp_score(
+            artifact_baseline + (assessment.artifact_score - 0.5) * artifact_factor
+        )
+        adjusted_metadata_score = clamp_score(0.5 + (assessment.metadata_score - 0.5) * 0.2)
+
+        preserved_notes = [
+            note
+            for note in assessment.notes
+            if "Metadata references" in note or "Camera acquisition metadata" in note
+        ]
+        preview_notes = [
+            "This result is based on a platform preview image rather than the original uploaded media.",
+            "Thumbnail styling and compression can imitate AI-like artifacts, so preview evidence is weighted conservatively.",
+        ]
+        if provider == "youtube":
+            preview_notes[1] = (
+                "YouTube thumbnails often use aggressive edits and compression, so preview evidence is weighted conservatively."
+            )
+
+        return ComponentAssessment(
+            model_score=assessment.model_score,
+            metadata_score=adjusted_metadata_score,
+            artifact_score=adjusted_artifact_score,
+            notes=list(dict.fromkeys([*preserved_notes, *preview_notes])),
+            analysis_stats=assessment.analysis_stats,
         )
 
     def _score_image_metadata(self, metadata: dict) -> tuple[float, list[str]]:

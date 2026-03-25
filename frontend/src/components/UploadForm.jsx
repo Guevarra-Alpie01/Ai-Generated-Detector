@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import AlertMessage from "./AlertMessage";
+import { prepareUploadFile } from "../utils/uploadOptimization";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024;
@@ -27,6 +28,7 @@ export default function UploadForm({ loading, onSubmit }) {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
+  const [optimizationNote, setOptimizationNote] = useState("");
 
   useEffect(() => {
     return () => {
@@ -46,6 +48,7 @@ export default function UploadForm({ loading, onSubmit }) {
     setFile(nextFile);
     if (!nextFile) {
       setError("");
+      setOptimizationNote("");
       return;
     }
 
@@ -55,6 +58,10 @@ export default function UploadForm({ loading, onSubmit }) {
     if (nextFile.type.startsWith("image/")) {
       setPreviewUrl(URL.createObjectURL(nextFile));
     }
+  }
+
+  function formatMegabytes(bytes) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   async function handleSubmit(event) {
@@ -72,7 +79,21 @@ export default function UploadForm({ loading, onSubmit }) {
     }
 
     setError("");
-    await onSubmit(file);
+    try {
+      const preparedUpload = await prepareUploadFile(file);
+      if (preparedUpload.optimization) {
+        setOptimizationNote(
+          `Optimized image upload from ${formatMegabytes(
+            preparedUpload.optimization.originalBytes,
+          )} to ${formatMegabytes(preparedUpload.optimization.optimizedBytes)} for a faster mobile upload.`,
+        );
+      } else {
+        setOptimizationNote("");
+      }
+      await onSubmit(preparedUpload.file);
+    } catch (submitError) {
+      setError(submitError.message || "The upload could not be prepared.");
+    }
   }
 
   return (
@@ -87,6 +108,7 @@ export default function UploadForm({ loading, onSubmit }) {
         </div>
 
         <AlertMessage message={error} />
+        <AlertMessage variant="info" message={optimizationNote} />
 
         <form onSubmit={handleSubmit} className="d-grid gap-3">
           <div className="upload-dropzone rounded-4 border border-2 border-dashed p-4 bg-light-subtle">
@@ -101,7 +123,8 @@ export default function UploadForm({ loading, onSubmit }) {
               onChange={handleFileChange}
             />
             <div className="form-text mt-2">
-              Images max 10 MB. Videos max 20 MB. Long videos are sampled from the first few seconds only.
+              Images max 10 MB. Videos max 20 MB. Large photos are shrunk in the browser first to help slower mobile
+              connections.
             </div>
           </div>
 

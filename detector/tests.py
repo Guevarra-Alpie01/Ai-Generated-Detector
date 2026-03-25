@@ -22,6 +22,7 @@ from detector.services.score_aggregator import ScoreAggregator
 from detector.services.scoring import DetectionOutcome, clamp_score, label_from_probability, weighted_score
 from detector.utils.url_media_extract import PublicMediaSnapshot
 from media_handler.constants import SourceTypes
+from results.models import DetectionResult
 
 
 def build_test_image_bytes(color=(120, 140, 180)) -> bytes:
@@ -377,6 +378,74 @@ class DetectionApiResponseTests(TestCase):
         self.override.disable()
         shutil.rmtree(self.media_root, ignore_errors=True)
         super().tearDown()
+
+    @override_settings(UPLOAD_RESULT_CACHE_SECONDS=3600)
+    @patch("detector.views.DetectionService.analyze_uploaded_media")
+    def test_upload_api_reuses_recent_cached_result_for_identical_file(self, analyze_mock):
+        cached = DetectionResult.objects.create(
+            source_type=SourceTypes.IMAGE,
+            content_sha256="",
+            original_filename="cached.png",
+            result_label="Likely real",
+            confidence_score=0.22,
+            details="Recent cached upload result.",
+            provider_summary={"successful": ["local"]},
+            provider_used=["local"],
+            fallback_used=True,
+            signals=["cached local result"],
+            score_breakdown={"ai_score": 0.22},
+            source_metadata={},
+            raw_local_result={"ai_score": 0.22},
+        )
+        upload = SimpleUploadedFile("sample.png", build_test_image_bytes(), content_type="image/png")
+
+        import hashlib
+
+        cached.content_sha256 = hashlib.sha256(upload.read()).hexdigest()
+        cached.save(update_fields=["content_sha256"])
+        upload.seek(0)
+
+        response = self.client.post(
+            "/api/detect/upload/",
+            {"file": upload},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()["result"]
+        self.assertEqual(payload["result_label"], "Likely real")
+        self.assertTrue(payload["cached_result"])
+        analyze_mock.assert_not_called()
+
+    @override_settings(URL_RESULT_CACHE_SECONDS=3600)
+    @patch("detector.views.fetch_public_media_snapshot")
+    def test_url_api_reuses_recent_cached_result(self, snapshot_mock):
+        DetectionResult.objects.create(
+            source_type=SourceTypes.YOUTUBE,
+            source_url="https://www.youtube.com/watch?v=cached",
+            result_label="Uncertain",
+            confidence_score=0.51,
+            details="Recent cached URL result.",
+            provider_summary={"successful": ["local"]},
+            provider_used=["local"],
+            fallback_used=True,
+            signals=["cached thumbnail result"],
+            score_breakdown={"ai_score": 0.51},
+            source_metadata={},
+            raw_local_result={"ai_score": 0.51},
+        )
+
+        response = self.client.post(
+            "/api/detect/url/",
+            {"url": "https://www.youtube.com/watch?v=cached"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()["result"]
+        self.assertEqual(payload["result_label"], "Uncertain")
+        self.assertTrue(payload["cached_result"])
+        snapshot_mock.assert_not_called()
 
     @patch("django.db.models.fields.files.FieldFile.save", autospec=True)
     @patch("detector.views.DetectionService.analyze_uploaded_media")

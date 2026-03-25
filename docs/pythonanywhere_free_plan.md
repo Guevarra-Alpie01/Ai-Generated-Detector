@@ -39,6 +39,8 @@ export DJANGO_SECURE_SSL_REDIRECT='True'
 export DJANGO_ALLOWED_HOSTS='yourusername.pythonanywhere.com'
 export DJANGO_CSRF_TRUSTED_ORIGINS='https://yourusername.pythonanywhere.com'
 export TEMP_ANALYSIS_DIR='/home/yourusername/aidetector/tmp'
+export UPLOAD_RESULT_CACHE_SECONDS='86400'
+export URL_RESULT_CACHE_SECONDS='21600'
 export ENABLE_AUDIO_ANALYSIS='True'
 export ENABLE_URL_AUDIO_ANALYSIS='True'
 export MAX_AUDIO_ANALYSIS_SECONDS='10'
@@ -73,6 +75,7 @@ export REALITY_DEFENDER_SOFT_LIMIT_PER_DAY='20'
 - Free accounts are not ideal for running a Node build pipeline on-host, so it is safer to build React locally and upload the generated assets.
 - This project now auto-loads a project-level `.pythonanywhere.env` file from `manage.py`, `main/wsgi.py`, and `main/asgi.py`, so one env file can drive both Bash commands and the live web app.
 - The deployed frontend calls relative `/api/...` URLs, so the recommended PythonAnywhere setup is one Django site serving both UI and API on the same domain.
+- Large image uploads can be shrunk in the browser before sending, and recent identical uploads or URL checks can be reused from SQLite for a short configurable window to reduce repeat waits on slower phone connections.
 - Keep `ILLUMINARTY_ENABLED` and `REALITY_DEFENDER_ENABLED` off until the matching credentials and endpoint URLs are present. Disabled providers are skipped cleanly and the local fallback still runs.
 - Free PythonAnywhere accounts only have outbound access to allowlisted domains. If the Illuminarty or Reality Defender API domains are not on PythonAnywhere's allowlist, those providers will fail on the free plan and the local fallback will remain the active path unless you request allowlisting or upgrade to a paid account.
 - Reality Defender is integrated behind a soft daily quota guard in SQLite. If the local guard reaches its limit or the API returns quota/rate-limit errors, the request falls back to local analysis instead of failing outright.

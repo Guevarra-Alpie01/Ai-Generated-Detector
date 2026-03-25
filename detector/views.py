@@ -5,6 +5,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from detector.serializers import URLDetectionSerializer, UploadDetectionSerializer
+from detector.services.result_cache import (
+    clone_cached_result,
+    find_recent_upload_result,
+    find_recent_url_result,
+    hash_uploaded_file,
+)
 from detector.services.detection_service import DetectionService
 from detector.services.scoring import DetectionOutcome
 from detector.throttling import DetectionBurstRateThrottle, DetectionSustainedRateThrottle
@@ -77,11 +83,29 @@ class UploadDetectionAPIView(APIView):
 
         uploaded_file = serializer.validated_data["file"]
         source_type = serializer.validated_data["source_type"]
+        content_sha256 = hash_uploaded_file(uploaded_file)
+        cached_result = find_recent_upload_result(content_sha256, source_type)
+        if cached_result is not None:
+            cloned_result = clone_cached_result(
+                cached_result,
+                source_type=source_type,
+                original_filename=uploaded_file.name,
+                content_sha256=content_sha256,
+            )
+            return Response(
+                {
+                    "message": "Detection completed successfully.",
+                    "result": DetectionResultSerializer(cloned_result, context={"request": request}).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
         detection_service = DetectionService()
 
         result = DetectionResult(
             source_type=source_type,
             original_filename=uploaded_file.name,
+            content_sha256=content_sha256,
         )
         result.uploaded_file.save(build_upload_name(uploaded_file.name), uploaded_file, save=True)
 
@@ -116,6 +140,21 @@ class URLDetectionAPIView(APIView):
 
         normalized_url = serializer.validated_data["normalized_url"]
         source_type = serializer.validated_data["source_type"]
+        cached_result = find_recent_url_result(normalized_url, source_type)
+        if cached_result is not None:
+            cloned_result = clone_cached_result(
+                cached_result,
+                source_type=source_type,
+                source_url=normalized_url,
+            )
+            return Response(
+                {
+                    "message": "URL analysis completed successfully.",
+                    "result": DetectionResultSerializer(cloned_result, context={"request": request}).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
         detection_service = DetectionService()
         snapshot: PublicMediaSnapshot | None = None
 

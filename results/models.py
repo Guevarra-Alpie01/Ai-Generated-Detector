@@ -6,6 +6,7 @@ from media_handler.constants import SourceTypes
 
 class DetectionResult(models.Model):
     source_type = models.CharField(max_length=20, choices=SourceTypes.CHOICES, db_index=True)
+    content_sha256 = models.CharField(max_length=64, blank=True, db_index=True)
     uploaded_file = models.FileField(upload_to="uploads/", blank=True, null=True)
     source_url = models.URLField(blank=True)
     original_filename = models.CharField(max_length=255, blank=True)

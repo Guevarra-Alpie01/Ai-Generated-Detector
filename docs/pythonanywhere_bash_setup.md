@@ -115,6 +115,8 @@ DJANGO_ALLOWED_HOSTS=yourusername.pythonanywhere.com
 DJANGO_CSRF_TRUSTED_ORIGINS=https://yourusername.pythonanywhere.com
 DJANGO_TIME_ZONE=Asia/Manila
 TEMP_ANALYSIS_DIR=/home/yourusername/aidetector/tmp
+UPLOAD_RESULT_CACHE_SECONDS=86400
+URL_RESULT_CACHE_SECONDS=21600
 ENABLE_AUDIO_ANALYSIS=True
 ENABLE_URL_AUDIO_ANALYSIS=True
 FFMPEG_BINARY=ffmpeg
@@ -127,6 +129,7 @@ REALITY_DEFENDER_API_URL=https://api.prd.realitydefender.xyz
 ```
 
 Keep external providers disabled until you have valid credentials and have verified that PythonAnywhere free-plan networking can reach those API domains.
+Large phone photos can be shrunk in the browser before upload, and recent identical uploads or URL checks can be reused from SQLite to reduce repeat waits.
 
 ## 7. Prepare directories and run Django setup
 

@@ -9,6 +9,7 @@ class DetectionResultSerializer(serializers.ModelSerializer):
     providers_used = serializers.SerializerMethodField()
     audio_analysis_used = serializers.SerializerMethodField()
     audio_summary = serializers.SerializerMethodField()
+    cached_result = serializers.SerializerMethodField()
 
     class Meta:
         model = DetectionResult
@@ -24,6 +25,7 @@ class DetectionResultSerializer(serializers.ModelSerializer):
             "details",
             "providers_used",
             "fallback_used",
+            "cached_result",
             "signals",
             "provider_summary",
             "score_breakdown",
@@ -91,3 +93,9 @@ class DetectionResultSerializer(serializers.ModelSerializer):
             if isinstance(nested_summary, dict):
                 return nested_summary
         return None
+
+    def get_cached_result(self, obj):
+        metadata = obj.source_metadata or {}
+        if isinstance(metadata, dict):
+            return bool(metadata.get("cached_result", False))
+        return False

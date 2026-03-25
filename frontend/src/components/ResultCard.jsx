@@ -64,6 +64,7 @@ export default function ResultCard({ result }) {
         </div>
 
         <div className="d-flex flex-wrap gap-2 mb-3">
+          {result.cached_result && <span className="badge text-bg-info">Recent cache used</span>}
           {externalProviderUsed && <span className="badge text-bg-primary">External provider used</span>}
           {result.fallback_used && <span className="badge text-bg-secondary">Local fallback used</span>}
           {result.result_label === "Uncertain" && <span className="badge text-bg-warning">Uncertain result</span>}

@@ -24,7 +24,11 @@ class LocalVideoDetector:
         self.image_detector = image_detector or LocalImageDetector()
         self.audio_detector = audio_detector or LocalAudioDetector()
 
-    def detect(self, video_path: str) -> tuple[ProviderResult, dict, dict]:
+    def detect(
+        self,
+        video_path: str,
+        source_metadata: dict | None = None,
+    ) -> tuple[ProviderResult, dict, dict]:
         frames = sample_video_frames(
             video_path,
             max_seconds=settings.MAX_VIDEO_ANALYSIS_SECONDS,
@@ -91,13 +95,14 @@ class LocalVideoDetector:
             "signals": unique_signals,
             **audio_result.as_breakdown(),
         }
-        source_metadata = {
+        merged_source_metadata = {
+            **(source_metadata or {}),
             **video_metadata,
             "frames_sampled": len(frames),
         }
         raw_payload = sanitize_json_payload(
             {
-                "video_metadata": source_metadata,
+                "video_metadata": merged_source_metadata,
                 "frame_mean_score": round(frame_mean_score, 4),
                 "frame_score_variance": frame_score_variance,
                 "temporal_score": round(temporal_score, 4),
@@ -116,7 +121,7 @@ class LocalVideoDetector:
             ai_score=ai_score,
             details=details,
         )
-        return result, source_metadata, breakdown
+        return result, merged_source_metadata, breakdown
 
     def _score_video_metadata(self, metadata: dict) -> tuple[float, list[str]]:
         score = 0.5

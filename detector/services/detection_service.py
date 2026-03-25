@@ -51,8 +51,15 @@ class DetectionService:
             local_breakdown=local_breakdown,
         )
 
-    def analyze_video(self, video_path: str) -> DetectionOutcome:
-        local_result, source_metadata, local_breakdown = self.local_video_detector.detect(video_path)
+    def analyze_video(
+        self,
+        video_path: str,
+        source_metadata: dict | None = None,
+    ) -> DetectionOutcome:
+        local_result, source_metadata, local_breakdown = self.local_video_detector.detect(
+            video_path,
+            source_metadata=source_metadata,
+        )
         provider_results = [local_result]
         for provider in self.provider_registry.video_providers():
             provider_results.append(provider.detect_video(video_path, source_metadata=source_metadata))

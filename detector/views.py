@@ -48,6 +48,25 @@ def _persist_detection_outcome(result: DetectionResult, outcome: DetectionOutcom
     )
 
 
+def _build_url_audio_skip_summary(snapshot: PublicMediaSnapshot) -> str:
+    provider = str(snapshot.metadata.get("provider", "")).lower()
+    preview_media_type = str(snapshot.metadata.get("preview_media_type", "image")).lower()
+    if provider == "youtube":
+        return (
+            "Audio was not analyzed for this YouTube URL because this deployment only inspects the public thumbnail, "
+            "not the full video stream."
+        )
+    if preview_media_type == "image":
+        return (
+            "Audio was not analyzed for this URL because only a public preview image was accessible within the current "
+            "free-plan limits."
+        )
+    return (
+        "Audio was not analyzed for this URL because a usable preview video stream was not available within the "
+        "configured limits."
+    )
+
+
 class UploadDetectionAPIView(APIView):
     parser_classes = [MultiPartParser, FormParser]
     throttle_classes = [DetectionBurstRateThrottle, DetectionSustainedRateThrottle]
@@ -102,10 +121,21 @@ class URLDetectionAPIView(APIView):
 
         try:
             snapshot = fetch_public_media_snapshot(normalized_url, source_type)
-            outcome = detection_service.analyze_image(
-                snapshot.local_path,
-                source_metadata=snapshot.metadata,
-            )
+            if snapshot.analysis_type == SourceTypes.VIDEO:
+                outcome = detection_service.analyze_video(
+                    snapshot.local_path,
+                    source_metadata=snapshot.metadata,
+                )
+            else:
+                outcome = detection_service.analyze_image(
+                    snapshot.local_path,
+                    source_metadata=snapshot.metadata,
+                )
+                audio_skip = detection_service.local_video_detector.audio_detector.preview_only_skip(
+                    _build_url_audio_skip_summary(snapshot),
+                    reason="preview_only_url",
+                )
+                outcome.breakdown.update(audio_skip.as_breakdown())
         except ValidationError:
             raise
         except Exception as exc:

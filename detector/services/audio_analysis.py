@@ -77,10 +77,16 @@ class LightweightAudioAnalyzer:
         )
         return self._analyze_extracted_clip(extraction)
 
-    def preview_only_skip(self) -> AudioAnalysisResult:
+    def preview_only_skip(
+        self,
+        summary: str | None = None,
+        *,
+        reason: str = "preview_only_url",
+    ) -> AudioAnalysisResult:
         return AudioAnalysisResult.skipped(
-            "Audio was not analyzed for this URL because preview mode only inspects the public thumbnail, not the full video stream.",
-            reason="preview_only_url",
+            summary
+            or "Audio was not analyzed for this URL because preview mode only inspects the public thumbnail, not the full video stream.",
+            reason=reason,
         )
 
     def _analyze_extracted_clip(self, extraction: AudioExtractionResult) -> AudioAnalysisResult:

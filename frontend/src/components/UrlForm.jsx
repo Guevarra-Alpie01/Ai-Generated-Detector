@@ -36,7 +36,10 @@ export default function UrlForm({ loading, onSubmit }) {
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div>
             <h2 className="h5 mb-1">Analyze URL</h2>
-            <p className="text-secondary mb-0">Public YouTube thumbnails and Facebook previews only. Full video and audio are not fetched in URL mode.</p>
+            <p className="text-secondary mb-0">
+              Public YouTube thumbnails and Facebook previews only. Facebook preview videos may include bounded local
+              audio analysis when a small public preview video is available.
+            </p>
           </div>
           <span className="badge text-bg-light">Preview-based</span>
         </div>
@@ -57,7 +60,8 @@ export default function UrlForm({ loading, onSubmit }) {
               onChange={(event) => setUrl(event.target.value)}
             />
             <div className="form-text">
-              Facebook content must expose a public preview image. Private or login-gated links will fail.
+              YouTube stays thumbnail-only. Facebook content must expose a public preview image or preview video.
+              Private or login-gated links will fail.
             </div>
           </div>
 

@@ -20,6 +20,8 @@ from detector.services.providers.reality_defender_provider import RealityDefende
 from detector.services.provider_registry import ProviderRegistry
 from detector.services.score_aggregator import ScoreAggregator
 from detector.services.scoring import DetectionOutcome, clamp_score, label_from_probability, weighted_score
+from detector.utils.url_media_extract import PublicMediaSnapshot
+from media_handler.constants import SourceTypes
 
 
 def build_test_image_bytes(color=(120, 140, 180)) -> bytes:
@@ -422,3 +424,103 @@ class DetectionApiResponseTests(TestCase):
         self.assertEqual(payload["providers_used"], ["local", "illuminarty"])
         self.assertTrue(payload["fallback_used"])
         self.assertEqual(payload["signals"], ["frequency anomaly detected", "external provider score elevated"])
+
+    @patch("detector.views.fetch_public_media_snapshot")
+    @patch("detector.views.DetectionService.analyze_image")
+    def test_url_api_marks_audio_as_skipped_when_only_image_preview_is_available(self, analyze_image_mock, snapshot_mock):
+        snapshot_mock.return_value = PublicMediaSnapshot(
+            source_type=SourceTypes.YOUTUBE,
+            analysis_type=SourceTypes.IMAGE,
+            local_path="preview.jpg",
+            remote_url="https://i.ytimg.com/vi/example/hqdefault.jpg",
+            metadata={
+                "provider": "youtube",
+                "preview_media_type": "image",
+                "preview_strategy": "thumbnail_only",
+            },
+        )
+        analyze_image_mock.return_value = DetectionOutcome(
+            label="Likely real",
+            confidence=0.63,
+            details="Preview image looked ordinary.",
+            breakdown={
+                "ai_score": 0.37,
+                "provider_scores": {"local": 0.37},
+            },
+            source_metadata={},
+            signals=["thumbnail looked ordinary"],
+            providers_used=["local"],
+            fallback_used=True,
+            provider_summary={
+                "successful": ["local"],
+                "skipped": ["illuminarty", "reality_defender"],
+                "failed": [],
+            },
+            raw_provider_results={"local": {"ai_score": 0.37}},
+        )
+
+        response = self.client.post(
+            "/api/detect/url/",
+            {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()["result"]
+        self.assertFalse(payload["audio_analysis_used"])
+        self.assertEqual(payload["audio_summary"]["reason"], "preview_only_url")
+        self.assertIn("thumbnail", payload["audio_summary"]["summary"].lower())
+
+    @patch("detector.views.fetch_public_media_snapshot")
+    @patch("detector.views.DetectionService.analyze_video")
+    def test_url_api_returns_audio_results_when_preview_video_is_available(self, analyze_video_mock, snapshot_mock):
+        snapshot_mock.return_value = PublicMediaSnapshot(
+            source_type=SourceTypes.FACEBOOK,
+            analysis_type=SourceTypes.VIDEO,
+            local_path="preview.mp4",
+            remote_url="https://video.xx.fbcdn.net/example.mp4",
+            metadata={
+                "provider": "facebook",
+                "preview_media_type": "video",
+                "preview_strategy": "open_graph_preview_video",
+            },
+        )
+        analyze_video_mock.return_value = DetectionOutcome(
+            label="AI-generated",
+            confidence=0.79,
+            details="Preview video and audio showed synthetic cues.",
+            breakdown={
+                "ai_score": 0.79,
+                "audio_analysis_used": True,
+                "audio_score": 0.74,
+                "audio_summary": {
+                    "used": True,
+                    "summary": "Audio analysis found uniform energy contour.",
+                    "reason": "analyzed",
+                    "signals": ["uniform energy contour"],
+                    "audio_score": 0.74,
+                },
+            },
+            source_metadata={},
+            signals=["uniform energy contour"],
+            providers_used=["local"],
+            fallback_used=True,
+            provider_summary={
+                "successful": ["local"],
+                "skipped": ["illuminarty", "reality_defender"],
+                "failed": [],
+            },
+            raw_provider_results={"local": {"ai_score": 0.79}},
+        )
+
+        response = self.client.post(
+            "/api/detect/url/",
+            {"url": "https://www.facebook.com/watch/?v=123456789"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()["result"]
+        self.assertTrue(payload["audio_analysis_used"])
+        self.assertEqual(payload["audio_summary"]["reason"], "analyzed")
+        self.assertEqual(payload["audio_summary"]["signals"], ["uniform energy contour"])

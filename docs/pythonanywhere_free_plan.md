@@ -35,10 +35,12 @@ export DJANGO_ALLOWED_HOSTS='yourusername.pythonanywhere.com'
 export DJANGO_CSRF_TRUSTED_ORIGINS='https://yourusername.pythonanywhere.com'
 export TEMP_ANALYSIS_DIR='/home/yourusername/aidetector/tmp'
 export ENABLE_AUDIO_ANALYSIS='True'
+export ENABLE_URL_AUDIO_ANALYSIS='True'
 export MAX_AUDIO_ANALYSIS_SECONDS='10'
 export AUDIO_ANALYSIS_SAMPLE_RATE='16000'
 export AUDIO_ANALYSIS_TIMEOUT_SECONDS='8'
 export FFMPEG_BINARY='ffmpeg'
+export URL_FETCH_MAX_VIDEO_BYTES='12582912'
 export DETECTION_LABEL_LOW_THRESHOLD='0.35'
 export DETECTION_LABEL_HIGH_THRESHOLD='0.68'
 export LOCAL_ONLY_LABEL_LOW_THRESHOLD='0.46'
@@ -67,6 +69,7 @@ export REALITY_DEFENDER_SOFT_LIMIT_PER_DAY='20'
 - Keep `ILLUMINARTY_ENABLED` and `REALITY_DEFENDER_ENABLED` off until the matching credentials and endpoint URLs are present. Disabled providers are skipped cleanly and the local fallback still runs.
 - Reality Defender is integrated behind a soft daily quota guard in SQLite. If the local guard reaches its limit or the API returns quota/rate-limit errors, the request falls back to local analysis instead of failing outright.
 - Facebook preview extraction depends on publicly accessible Open Graph metadata; private or login-gated links will fail validation.
-- YouTube URL analysis intentionally uses thumbnails only to keep latency and CPU usage predictable.
+- Facebook public links can use a small preview video when one is exposed publicly, which allows bounded local audio analysis without downloading the full original post.
+- YouTube URL analysis intentionally uses thumbnails only to keep latency and CPU usage predictable, so audio remains unavailable for YouTube URL mode on the free plan.
 - Audio extraction prefers `ffmpeg` when it is available. If `ffmpeg` is missing or the source video has no usable audio stream, the request falls back to visual-only scoring instead of failing.
 - Large remote videos are not fetched in v1. Video uploads are analyzed locally, and external video-provider hooks remain disabled by default for free-plan deployments.

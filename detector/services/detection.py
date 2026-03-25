@@ -5,6 +5,7 @@ import statistics
 from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
+from detector.services.audio_analysis import LightweightAudioAnalyzer
 from detector.services.scoring import (
     ComponentAssessment,
     DetectionOutcome,
@@ -35,6 +36,7 @@ class OptionalOnnxImageScorer:
 class DetectionOrchestrator:
     def __init__(self):
         self.model_scorer = OptionalOnnxImageScorer()
+        self.audio_analyzer = LightweightAudioAnalyzer()
 
     def detect_image(self, image_path: str, external_metadata: dict | None = None) -> DetectionOutcome:
         image, metadata = load_preprocessed_image(image_path, max_dimension=settings.MAX_IMAGE_DIMENSION)
@@ -75,6 +77,7 @@ class DetectionOrchestrator:
             raise ValidationError("No video frames could be extracted from the uploaded MP4 file.")
 
         video_metadata = extract_video_metadata(video_path)
+        audio_analysis = self.audio_analyzer.analyze_video(video_path)
         frame_probabilities = []
         model_scores = []
         artifact_scores = []
@@ -103,6 +106,8 @@ class DetectionOrchestrator:
         notes.extend(metadata_notes)
         temporal_score, temporal_notes = self._score_video_temporal_artifacts(frame_stats, frame_probabilities)
         notes.extend(temporal_notes)
+        if audio_analysis.summary:
+            notes.append(audio_analysis.summary)
         combined_frame_score = clamp_score(frame_score * 0.7 + temporal_score * 0.3)
         average_model_score = round(sum(model_scores) / len(model_scores), 4) if model_scores else None
 
@@ -112,6 +117,7 @@ class DetectionOrchestrator:
                 "metadata_score": metadata_score,
                 "artifact_score": sum(artifact_scores) / len(artifact_scores),
                 "frame_score": combined_frame_score,
+                "audio_score": audio_analysis.audio_score,
             },
             settings.DETECTION_WEIGHTS["video"],
         )
@@ -134,6 +140,7 @@ class DetectionOrchestrator:
                 "frame_score": round(combined_frame_score, 4),
                 "temporal_score": round(temporal_score, 4),
                 "ai_probability": ai_probability,
+                **audio_analysis.as_breakdown(),
                 "notes": list(dict.fromkeys(notes)),
             },
             source_metadata=metadata_payload,

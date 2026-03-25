@@ -136,6 +136,11 @@ MAX_IMAGE_DIMENSION = int(os.environ.get("MAX_IMAGE_DIMENSION", 1280))
 MAX_VIDEO_ANALYSIS_SECONDS = int(os.environ.get("MAX_VIDEO_ANALYSIS_SECONDS", 12))
 MAX_VIDEO_FRAMES = int(os.environ.get("MAX_VIDEO_FRAMES", 5))
 MAX_VIDEO_PREVIEW_WIDTH = int(os.environ.get("MAX_VIDEO_PREVIEW_WIDTH", 960))
+ENABLE_AUDIO_ANALYSIS = env_bool("ENABLE_AUDIO_ANALYSIS", True)
+MAX_AUDIO_ANALYSIS_SECONDS = int(os.environ.get("MAX_AUDIO_ANALYSIS_SECONDS", 10))
+AUDIO_ANALYSIS_SAMPLE_RATE = int(os.environ.get("AUDIO_ANALYSIS_SAMPLE_RATE", 16000))
+AUDIO_ANALYSIS_TIMEOUT_SECONDS = int(os.environ.get("AUDIO_ANALYSIS_TIMEOUT_SECONDS", 8))
+FFMPEG_BINARY = os.environ.get("FFMPEG_BINARY", "")
 URL_FETCH_TIMEOUT_SECONDS = int(os.environ.get("URL_FETCH_TIMEOUT_SECONDS", 8))
 URL_FETCH_MAX_BYTES = int(os.environ.get("URL_FETCH_MAX_BYTES", 10 * 1024 * 1024))
 AI_DETECTION_LABEL_THRESHOLD = float(os.environ.get("AI_DETECTION_LABEL_THRESHOLD", 0.58))
@@ -155,10 +160,11 @@ DETECTION_WEIGHTS = {
         "artifact_score": 0.55,
     },
     "video": {
-        "model_score": 0.15,
+        "model_score": 0.10,
         "metadata_score": 0.15,
-        "artifact_score": 0.30,
-        "frame_score": 0.40,
+        "artifact_score": 0.25,
+        "frame_score": 0.35,
+        "audio_score": 0.15,
     },
 }
 

@@ -88,6 +88,13 @@ class URLDetectionAPIView(APIView):
                 snapshot.local_path,
                 external_metadata=snapshot.metadata,
             )
+            audio_analysis = orchestrator.audio_analyzer.preview_only_skip()
+            outcome.breakdown.update(audio_analysis.as_breakdown())
+            outcome.details = (
+                f"{outcome.details}; {audio_analysis.summary}"
+                if outcome.details
+                else audio_analysis.summary
+            )
         except ValidationError:
             raise
         except Exception as exc:

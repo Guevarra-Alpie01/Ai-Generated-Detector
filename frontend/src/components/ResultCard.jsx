@@ -19,6 +19,7 @@ export default function ResultCard({ result }) {
   }
 
   const source = result.original_filename || result.source_url || result.source_type;
+  const audioSummary = result.audio_summary;
 
   return (
     <div className="card border-0 shadow-sm">
@@ -70,9 +71,38 @@ export default function ResultCard({ result }) {
               <div className="small">
                 Metadata score: {Number(result.score_breakdown?.metadata_score || 0).toFixed(2)}
               </div>
+              {result.score_breakdown?.audio_score !== null && result.score_breakdown?.audio_score !== undefined && (
+                <div className="small">
+                  Audio score: {Number(result.score_breakdown?.audio_score || 0).toFixed(2)}
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {audioSummary && (
+          <div className="rounded-4 bg-light p-3 mt-3">
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <div className="small text-uppercase text-secondary fw-semibold">Audio</div>
+              <span className={`badge ${result.audio_analysis_used ? "text-bg-primary" : "text-bg-secondary"}`}>
+                {result.audio_analysis_used ? "Audio analyzed" : "Audio skipped"}
+              </span>
+            </div>
+            <p className="small mb-2">{audioSummary.summary || "No usable audio detected."}</p>
+            {Array.isArray(audioSummary.signals) && audioSummary.signals.length > 0 && (
+              <ul className="small mb-2 ps-3">
+                {audioSummary.signals.map((signal) => (
+                  <li key={signal}>{signal}</li>
+                ))}
+              </ul>
+            )}
+            {audioSummary.audio_score !== null && audioSummary.audio_score !== undefined && (
+              <div className="small text-secondary">
+                Audio evidence score: {Number(audioSummary.audio_score).toFixed(2)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

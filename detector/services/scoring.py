@@ -35,7 +35,7 @@ class DetectionOutcome:
     label: str
     confidence: float
     details: str
-    breakdown: dict[str, float | str | list[str] | None]
+    breakdown: dict[str, float | int | str | bool | list[str] | dict | None]
     source_metadata: dict[str, str | float | int | bool | list[str] | dict]
 
 

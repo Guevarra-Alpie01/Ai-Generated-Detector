@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,25 @@ def delete_file_quietly(path: str | Path | None) -> None:
         return
     with contextlib.suppress(FileNotFoundError):
         Path(path).unlink()
+
+
+@contextlib.contextmanager
+def temporary_uploaded_file(file_obj, original_name: str):
+    suffix = Path(original_name).suffix.lower() or ".bin"
+    temp_dir = ensure_temp_dir("uploads")
+    temp_path = temp_dir / f"upload-{uuid.uuid4().hex}{suffix}"
+
+    try:
+        with temp_path.open("wb") as destination:
+            for chunk in file_obj.chunks():
+                destination.write(chunk)
+
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+
+        yield temp_path
+    finally:
+        delete_file_quietly(temp_path)
 
 
 def sanitize_json_payload(payload: Any, *, max_chars: int | None = None) -> dict | list | str | int | float | bool | None:

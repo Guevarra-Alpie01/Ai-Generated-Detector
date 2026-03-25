@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import status
 from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -14,6 +15,7 @@ from detector.services.result_cache import (
 from detector.services.detection_service import DetectionService
 from detector.services.scoring import DetectionOutcome
 from detector.throttling import DetectionBurstRateThrottle, DetectionSustainedRateThrottle
+from detector.utils.temp_files import temporary_uploaded_file
 from detector.utils.url_media_extract import PublicMediaSnapshot, fetch_public_media_snapshot
 from media_handler.constants import SourceTypes
 from media_handler.services.image_utils import build_upload_name
@@ -101,23 +103,31 @@ class UploadDetectionAPIView(APIView):
             )
 
         detection_service = DetectionService()
-
-        result = DetectionResult(
-            source_type=source_type,
-            original_filename=uploaded_file.name,
-            content_sha256=content_sha256,
-        )
-        result.uploaded_file.save(build_upload_name(uploaded_file.name), uploaded_file, save=True)
+        result: DetectionResult | None = None
 
         try:
-            outcome = detection_service.analyze_uploaded_media(result.uploaded_file.path, source_type)
+            with temporary_uploaded_file(uploaded_file, uploaded_file.name) as temp_path:
+                outcome = detection_service.analyze_uploaded_media(str(temp_path), source_type)
+
+            result = DetectionResult.objects.create(
+                source_type=source_type,
+                original_filename=uploaded_file.name,
+                content_sha256=content_sha256,
+            )
+            if settings.STORE_UPLOADED_MEDIA:
+                if hasattr(uploaded_file, "seek"):
+                    uploaded_file.seek(0)
+                result.uploaded_file.save(build_upload_name(uploaded_file.name), uploaded_file, save=False)
+                result.save(update_fields=["uploaded_file"])
         except ValidationError:
-            result.uploaded_file.delete(save=False)
-            result.delete()
+            if result is not None:
+                result.uploaded_file.delete(save=False)
+                result.delete()
             raise
         except Exception as exc:
-            result.uploaded_file.delete(save=False)
-            result.delete()
+            if result is not None:
+                result.uploaded_file.delete(save=False)
+                result.delete()
             raise APIException(f"Detection failed unexpectedly: {exc}") from exc
 
         _persist_detection_outcome(result, outcome)

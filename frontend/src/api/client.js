@@ -2,7 +2,35 @@ const CLIENT_SESSION_STORAGE_KEY = "ai-media-detector-client-session";
 
 function timeoutErrorMessage(kind, timeoutMs) {
   const seconds = Math.round(timeoutMs / 1000);
-  return `${kind} took longer than ${seconds} seconds. Please try a smaller file or try again on a stronger connection.`;
+  return `${kind} took longer than ${seconds} seconds. Large uploads on mobile data may need more time, so try again or use a smaller file if this keeps happening.`;
+}
+
+function resolveConnectionInfo() {
+  if (typeof navigator === "undefined") {
+    return null;
+  }
+
+  return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
+}
+
+function buildUploadTimeoutMs(file, clientMetadata = null) {
+  const isVideo = file.type.startsWith("video/");
+  const fileSizeMb = Math.max(1, file.size / (1024 * 1024));
+  const connection = resolveConnectionInfo();
+  const effectiveType = clientMetadata?.connection_effective_type || connection?.effectiveType || "";
+  const saveData = Boolean(clientMetadata?.save_data || connection?.saveData);
+  const slowConnection = Boolean(clientMetadata?.slow_connection);
+
+  let timeoutMs = isVideo ? 120000 : 75000;
+  timeoutMs += Math.round(fileSizeMb * (isVideo ? 9000 : 7000));
+
+  if (saveData || slowConnection || effectiveType === "slow-2g" || effectiveType === "2g") {
+    timeoutMs += isVideo ? 120000 : 90000;
+  } else if (effectiveType === "3g") {
+    timeoutMs += isVideo ? 90000 : 60000;
+  }
+
+  return Math.min(timeoutMs, isVideo ? 300000 : 180000);
 }
 
 function createClientSessionKey() {
@@ -82,7 +110,7 @@ export async function submitUploadDetection(file, clientMetadata = null) {
   if (clientMetadata) {
     formData.append("client_metadata", JSON.stringify(clientMetadata));
   }
-  const timeoutMs = file.type.startsWith("video/") ? 90000 : 45000;
+  const timeoutMs = buildUploadTimeoutMs(file, clientMetadata);
 
   const response = await fetchWithTimeout(
     "/api/detect/upload/",

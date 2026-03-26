@@ -31,24 +31,44 @@ class DetectionService:
         source_type: str,
         source_metadata: dict | None = None,
     ) -> DetectionOutcome:
+        request_metadata = dict(source_metadata or {})
+        use_external_providers = not self._should_prefer_fast_local_only(request_metadata, source_type)
+
         if source_type == SourceTypes.IMAGE:
-            return self.analyze_image(file_path, source_metadata=source_metadata)
+            return self.analyze_image(
+                file_path,
+                source_metadata=request_metadata,
+                use_external_providers=use_external_providers,
+            )
         if source_type == SourceTypes.VIDEO:
-            return self.analyze_video(file_path, source_metadata=source_metadata)
+            return self.analyze_video(
+                file_path,
+                source_metadata=request_metadata,
+                use_external_providers=use_external_providers,
+            )
         raise ValidationError("Unsupported uploaded media type.")
 
     def analyze_image(
         self,
         image_path: str,
         source_metadata: dict | None = None,
+        *,
+        use_external_providers: bool = True,
     ) -> DetectionOutcome:
+        request_metadata = dict(source_metadata or {})
         local_result, final_source_metadata, local_breakdown = self.local_image_detector.detect(
             image_path,
-            external_metadata=source_metadata,
+            external_metadata=request_metadata,
         )
         provider_results = [local_result]
-        for provider in self.provider_registry.image_providers():
-            provider_results.append(provider.detect_image(image_path, source_metadata=final_source_metadata))
+        if use_external_providers:
+            for provider in self.provider_registry.image_providers():
+                provider_results.append(provider.detect_image(image_path, source_metadata=final_source_metadata))
+        else:
+            for provider in self.provider_registry.image_providers():
+                provider_results.append(
+                    provider.skipped("External provider queries were skipped to keep this mobile upload responsive.")
+                )
 
         return self.score_aggregator.combine(
             provider_results,
@@ -60,17 +80,43 @@ class DetectionService:
         self,
         video_path: str,
         source_metadata: dict | None = None,
+        *,
+        use_external_providers: bool = True,
     ) -> DetectionOutcome:
+        request_metadata = dict(source_metadata or {})
         local_result, source_metadata, local_breakdown = self.local_video_detector.detect(
             video_path,
-            source_metadata=source_metadata,
+            source_metadata=request_metadata,
         )
         provider_results = [local_result]
-        for provider in self.provider_registry.video_providers():
-            provider_results.append(provider.detect_video(video_path, source_metadata=source_metadata))
+        if use_external_providers:
+            for provider in self.provider_registry.video_providers():
+                provider_results.append(provider.detect_video(video_path, source_metadata=source_metadata))
+        else:
+            for provider in self.provider_registry.video_providers():
+                provider_results.append(
+                    provider.skipped("External provider queries were skipped to keep this mobile upload responsive.")
+                )
 
         return self.score_aggregator.combine(
             provider_results,
             source_metadata=source_metadata,
             local_breakdown=local_breakdown,
         )
+
+    def _should_prefer_fast_local_only(self, source_metadata: dict, source_type: str) -> bool:
+        if not source_metadata:
+            return False
+
+        if source_metadata.get("prefer_fast_analysis") or source_metadata.get("slow_connection") or source_metadata.get("save_data"):
+            return True
+
+        try:
+            original_bytes = int(float(source_metadata.get("original_bytes") or 0))
+        except (TypeError, ValueError):
+            original_bytes = 0
+
+        if source_type == SourceTypes.VIDEO:
+            return bool(source_metadata.get("mobile_browser") and original_bytes >= 8 * 1024 * 1024)
+
+        return bool(source_metadata.get("mobile_browser") and original_bytes >= 5 * 1024 * 1024)

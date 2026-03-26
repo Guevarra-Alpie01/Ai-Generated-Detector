@@ -30,12 +30,21 @@ class LocalImageDetector:
         metadata: dict | None = None,
     ) -> tuple[ProviderResult, dict, dict]:
         source_metadata = dict(metadata or {})
-        working_image = prepare_working_image(image, settings.LOCAL_IMAGE_WORKING_SIZE)
+        fast_mode_applied = bool(
+            source_metadata.get("prefer_fast_analysis")
+            or source_metadata.get("slow_connection")
+            or source_metadata.get("save_data")
+        )
+        working_size = settings.LOCAL_IMAGE_FAST_WORKING_SIZE if fast_mode_applied else settings.LOCAL_IMAGE_WORKING_SIZE
+        working_image = prepare_working_image(image, working_size)
         stats = analyse_image_features(working_image)
         metadata_score, metadata_signals = assess_image_metadata(source_metadata)
         artifact_score, artifact_signals = self._score_artifacts(stats)
         frequency_score, frequency_signals = self._score_frequency(stats)
         signals = [*metadata_signals, *artifact_signals, *frequency_signals]
+
+        if fast_mode_applied:
+            signals.append("Fast local image analysis mode was used to keep this upload responsive on a constrained device or connection.")
 
         if self._is_preview_based_source(source_metadata):
             metadata_score, artifact_score, frequency_score, signals = self._calibrate_preview_scores(
@@ -82,16 +91,22 @@ class LocalImageDetector:
             "metadata_score": round(metadata_score, 4),
             "artifact_score": round(artifact_score, 4),
             "frequency_score": round(frequency_score, 4),
+            "working_size": working_size,
+            "fast_mode_applied": fast_mode_applied,
             "analysis_stats": compact_stats,
             "signals": unique_signals,
         }
         source_metadata["analysis_stats"] = compact_stats
+        source_metadata["working_size"] = working_size
+        source_metadata["fast_mode_applied"] = fast_mode_applied
 
         raw_payload = sanitize_json_payload(
             {
                 "metadata_score": round(metadata_score, 4),
                 "artifact_score": round(artifact_score, 4),
                 "frequency_score": round(frequency_score, 4),
+                "working_size": working_size,
+                "fast_mode_applied": fast_mode_applied,
                 "analysis_stats": compact_stats,
                 "source_metadata": {
                     key: value

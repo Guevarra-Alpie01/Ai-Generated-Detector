@@ -76,6 +76,35 @@ class StubProvider:
         return self.result
 
 
+class CountingProvider:
+    def __init__(self, provider_name: str, ai_score: float = 0.82):
+        self.provider_name = provider_name
+        self.ai_score = ai_score
+        self.image_calls = 0
+        self.video_calls = 0
+
+    def detect_image(self, image_path: str, source_metadata: dict | None = None):
+        self.image_calls += 1
+        return ProviderResult.success(
+            self.provider_name,
+            ai_score=self.ai_score,
+            signals=["external provider result"],
+            raw={"score": self.ai_score},
+        )
+
+    def detect_video(self, video_path: str, source_metadata: dict | None = None):
+        self.video_calls += 1
+        return ProviderResult.success(
+            self.provider_name,
+            ai_score=self.ai_score,
+            signals=["external video provider result"],
+            raw={"score": self.ai_score},
+        )
+
+    def skipped(self, reason: str, *, raw=None, signals=None):
+        return ProviderResult.skipped(self.provider_name, reason, raw=raw, signals=signals)
+
+
 class StubProviderRegistry:
     def __init__(self, image_providers=None, video_providers=None):
         self._image_providers = image_providers or []
@@ -222,6 +251,43 @@ class LocalDetectorTests(SimpleTestCase):
 
         self.assertLess(score, 0.4)
         self.assertTrue(any("edited or enhanced" in note or "captured video workflow" in note for note in notes))
+
+    def test_local_image_detector_uses_smaller_working_size_in_fast_mode(self):
+        local_detector = LocalImageDetector()
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
+            image_path = image_file.name
+        try:
+            write_test_image(image_path)
+            _, source_metadata, breakdown = local_detector.detect(
+                image_path,
+                external_metadata={"prefer_fast_analysis": True, "slow_connection": True},
+            )
+        finally:
+            Path(image_path).unlink(missing_ok=True)
+
+        self.assertTrue(breakdown["fast_mode_applied"])
+        self.assertEqual(breakdown["working_size"], 192)
+        self.assertTrue(source_metadata["fast_mode_applied"])
+
+    def test_video_limits_shrink_when_mobile_fast_mode_is_requested(self):
+        local_video_detector = LocalVideoDetector()
+        limits = local_video_detector._resolve_analysis_limits(
+            {
+                "duration_seconds": 18,
+                "width": 1920,
+                "height": 1080,
+                "original_bytes": 9 * 1024 * 1024,
+                "mobile_browser": True,
+                "slow_connection": True,
+                "prefer_fast_analysis": True,
+            }
+        )
+
+        self.assertTrue(limits["fast_mode"])
+        self.assertLessEqual(limits["max_seconds"], 6)
+        self.assertLessEqual(limits["max_frames"], 2)
+        self.assertLessEqual(limits["target_width"], 640)
+        self.assertLessEqual(limits["audio_seconds"], 4)
 
 
 class ProviderBehaviorTests(SimpleTestCase):
@@ -409,6 +475,29 @@ class DetectionServiceAggregationTests(SimpleTestCase):
         self.assertTrue(outcome.fallback_used)
         self.assertIn("illuminarty", outcome.provider_summary["skipped"])
         self.assertIn("reality_defender", outcome.provider_summary["skipped"])
+
+    def test_mobile_fast_mode_skips_external_image_queries(self):
+        external_provider = CountingProvider("illuminarty")
+        service = DetectionService(
+            local_image_detector=StubLocalImageDetector(ai_score=0.42),
+            provider_registry=StubProviderRegistry(image_providers=[external_provider]),
+            score_aggregator=ScoreAggregator(),
+        )
+
+        outcome = service.analyze_uploaded_media(
+            "unused.png",
+            SourceTypes.IMAGE,
+            source_metadata={
+                "prefer_fast_analysis": True,
+                "mobile_browser": True,
+                "slow_connection": True,
+                "original_bytes": 6 * 1024 * 1024,
+            },
+        )
+
+        self.assertEqual(external_provider.image_calls, 0)
+        self.assertEqual(outcome.providers_used, ["local"])
+        self.assertIn("illuminarty", outcome.provider_summary["skipped"])
 
 
 class DetectionApiResponseTests(TestCase):

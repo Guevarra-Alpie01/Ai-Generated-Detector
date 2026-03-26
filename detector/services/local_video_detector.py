@@ -30,7 +30,9 @@ class LocalVideoDetector:
         source_metadata: dict | None = None,
     ) -> tuple[ProviderResult, dict, dict]:
         video_metadata = extract_video_metadata(video_path)
-        analysis_limits = self._resolve_analysis_limits(video_metadata)
+        request_metadata = dict(source_metadata or {})
+        analysis_metadata = {**video_metadata, **request_metadata}
+        analysis_limits = self._resolve_analysis_limits(analysis_metadata)
         frames = sample_video_frames(
             video_path,
             max_seconds=analysis_limits["max_seconds"],
@@ -51,10 +53,17 @@ class LocalVideoDetector:
         signals: list[str] = []
 
         if analysis_limits["fast_mode"]:
-            signals.append("Large upload was analyzed in fast mode to keep mobile and free-plan requests responsive.")
+            signals.append("Fast video analysis mode was used to keep this upload responsive on a constrained device or connection.")
 
         for index, frame in enumerate(frames):
-            frame_result, _, frame_breakdown = self.image_detector.detect_pil_image(frame, metadata={})
+            frame_result, _, frame_breakdown = self.image_detector.detect_pil_image(
+                frame,
+                metadata={
+                    "prefer_fast_analysis": analysis_limits["fast_mode"],
+                    "slow_connection": request_metadata.get("slow_connection"),
+                    "save_data": request_metadata.get("save_data"),
+                },
+            )
             if frame_result.ai_score is not None:
                 frame_scores.append(frame_result.ai_score)
             frame_stats.append(frame_breakdown["analysis_stats"])
@@ -107,7 +116,7 @@ class LocalVideoDetector:
             **audio_result.as_breakdown(),
         }
         merged_source_metadata = {
-            **(source_metadata or {}),
+            **request_metadata,
             **video_metadata,
             "frames_sampled": len(frames),
             "analysis_seconds": analysis_limits["max_seconds"],
@@ -142,6 +151,10 @@ class LocalVideoDetector:
         width = int(metadata.get("width") or 0)
         height = int(metadata.get("height") or 0)
         pixel_count = width * height
+        try:
+            original_bytes = int(float(metadata.get("original_bytes") or 0))
+        except (TypeError, ValueError):
+            original_bytes = 0
 
         max_seconds = settings.MAX_VIDEO_ANALYSIS_SECONDS
         max_frames = settings.MAX_VIDEO_FRAMES
@@ -166,6 +179,20 @@ class LocalVideoDetector:
             max_frames = min(max_frames, 2)
             target_width = min(target_width, 640)
             audio_seconds = min(audio_seconds, 4)
+            fast_mode = True
+
+        mobile_fast_mode = bool(
+            metadata.get("prefer_fast_analysis")
+            or metadata.get("slow_connection")
+            or metadata.get("save_data")
+            or (metadata.get("mobile_browser") and (original_bytes >= 8 * 1024 * 1024 or pixel_count >= 1280 * 720))
+        )
+
+        if mobile_fast_mode:
+            max_seconds = min(max_seconds, settings.FAST_VIDEO_ANALYSIS_SECONDS)
+            max_frames = min(max_frames, settings.FAST_VIDEO_FRAMES)
+            target_width = min(target_width, settings.FAST_VIDEO_PREVIEW_WIDTH)
+            audio_seconds = min(audio_seconds, settings.FAST_AUDIO_ANALYSIS_SECONDS)
             fast_mode = True
 
         return {

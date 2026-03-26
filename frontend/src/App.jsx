@@ -199,7 +199,7 @@ export default function App() {
               {submitting ? (
                 <LoadingState
                   label={activeTab === "upload" ? "Analyzing upload" : "Analyzing link"}
-                  detail="This usually finishes in a few seconds."
+                  detail="This usually finishes in a few seconds, but larger uploads on phones can take a bit longer."
                 />
               ) : (
                 <ResultCard result={latestResult} />

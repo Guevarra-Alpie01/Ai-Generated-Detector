@@ -102,7 +102,7 @@ export default function UploadForm({ loading, onSubmit }) {
     <section className="form-panel">
       <div className="form-panel-header">
         <div>
-          <h2 className="form-panel-title">Upload media</h2>
+          <h2 className="form-panel-title">Upload photos</h2>
           <p className="form-panel-copy">JPG, PNG, JPEG, or short MP4.</p>
         </div>
         <span className="form-chip">10 MB image / 20 MB video</span>
@@ -138,9 +138,11 @@ export default function UploadForm({ loading, onSubmit }) {
           </div>
         )}
 
-        <button type="submit" className="btn btn-primary btn-lg action-button" disabled={loading}>
-          {loading ? "Analyzing..." : "Analyze upload"}
-        </button>
+        <div className="action-button-row">
+          <button type="submit" className="btn btn-primary btn-lg action-button" disabled={loading}>
+            {loading ? "Analyzing..." : "Analyze upload"}
+          </button>
+        </div>
       </form>
     </section>
   );

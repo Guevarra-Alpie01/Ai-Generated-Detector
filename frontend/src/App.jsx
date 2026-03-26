@@ -158,10 +158,13 @@ export default function App() {
       <main className="container py-4 py-lg-5">
         <section className="analysis-stage mx-auto">
           <div className="analysis-copy text-center">
-            <span className="analysis-kicker">Fast media screening</span>
-            <h1 className="analysis-title">Upload a file or paste a public link to check it instantly.</h1>
+            <span className="analysis-kicker">AI Media Screening Tool</span>
+            <h1 className="analysis-title">
+              Check whether a photo, short video, or public social link looks real or AI-generated.
+            </h1>
             <p className="analysis-subtitle">
-              The detector keeps the main action front and center, then shows the result as soon as analysis finishes.
+              Use this tool for a quick first-pass review before you trust, share, or report media. Upload a file or
+              paste a public link to get an instant detection summary.
             </p>
           </div>
 
@@ -176,7 +179,7 @@ export default function App() {
                   onClick={() => setActiveTab("upload")}
                   aria-pressed={activeTab === "upload"}
                 >
-                  Upload
+                  Photos
                 </button>
                 <button
                   type="button"

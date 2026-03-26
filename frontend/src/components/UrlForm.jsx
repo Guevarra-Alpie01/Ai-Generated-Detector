@@ -58,9 +58,11 @@ export default function UrlForm({ loading, onSubmit }) {
           <div className="form-note">Private or login-gated links cannot be analyzed.</div>
         </div>
 
-        <button type="submit" className="btn btn-primary btn-lg action-button" disabled={loading}>
-          {loading ? "Analyzing..." : "Analyze URL"}
-        </button>
+        <div className="action-button-row">
+          <button type="submit" className="btn btn-primary btn-lg action-button" disabled={loading}>
+            {loading ? "Analyzing..." : "Analyze URL"}
+          </button>
+        </div>
       </form>
     </section>
   );

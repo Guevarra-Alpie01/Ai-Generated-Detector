@@ -132,7 +132,7 @@ body {
 }
 
 .analysis-title {
-  font-size: clamp(2.1rem, 5vw, 3.6rem);
+  font-size: clamp(1.95rem, 4.3vw, 3.15rem);
   line-height: 1.05;
   letter-spacing: -0.04em;
   margin-bottom: 0.9rem;
@@ -142,7 +142,7 @@ body {
   max-width: 640px;
   margin: 0 auto;
   color: var(--app-muted);
-  font-size: 1.05rem;
+  font-size: 0.98rem;
 }
 
 .panel-card,
@@ -179,7 +179,7 @@ body {
   border: 0;
   background: transparent;
   color: var(--app-muted);
-  padding: 0.8rem 1.15rem;
+  padding: 0.72rem 1.1rem;
   border-radius: 999px;
   font-weight: 600;
   transition:
@@ -189,9 +189,9 @@ body {
 }
 
 .mode-switch-button.active {
-  background: var(--app-accent);
-  color: #fff;
-  box-shadow: 0 10px 20px rgba(32, 108, 255, 0.2);
+  background: color-mix(in srgb, var(--app-accent) 18%, var(--app-surface-strong));
+  color: var(--app-accent-strong);
+  box-shadow: 0 10px 20px rgba(18, 34, 56, 0.08);
 }
 
 .mode-switch-button:hover {
@@ -212,12 +212,13 @@ body {
 
 .form-panel-title {
   margin: 0 0 0.35rem;
-  font-size: 1.55rem;
+  font-size: 1.42rem;
 }
 
 .form-panel-copy {
   margin: 0;
   color: var(--app-muted);
+  font-size: 0.96rem;
 }
 
 .form-chip {
@@ -229,9 +230,10 @@ body {
   border: 1px solid var(--app-border);
   background: var(--app-surface-soft);
   color: var(--app-ink);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
 }
 
 .upload-dropzone,
@@ -257,7 +259,7 @@ body {
 }
 
 .upload-dropzone-title {
-  font-size: 1rem;
+  font-size: 0.98rem;
   font-weight: 700;
 }
 
@@ -287,17 +289,25 @@ body {
 
 .form-note {
   margin-top: 0.8rem;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
 }
 
 .preview-panel {
   padding: 0.75rem;
 }
 
+.action-button-row {
+  display: flex;
+  justify-content: center;
+}
+
 .action-button {
-  min-height: 58px;
+  min-height: 56px;
+  width: min(100%, 22rem);
   border-radius: 18px;
   font-weight: 700;
+  justify-content: center;
 }
 
 .result-shell {
@@ -581,10 +591,55 @@ body {
   }
 
   .analysis-title {
-    font-size: 2.3rem;
+    font-size: 1.95rem;
+    line-height: 1.12;
+  }
+
+  .analysis-subtitle,
+  .form-panel-copy,
+  .upload-dropzone-copy,
+  .form-note {
+    font-size: 0.9rem;
+  }
+
+  .form-panel-title {
+    font-size: 1.28rem;
+  }
+
+  .mode-switch-button {
+    padding: 0.7rem 0.95rem;
+    font-size: 0.95rem;
   }
 
   .form-panel-header {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-chip {
+    align-self: flex-start;
+    max-width: 100%;
+  }
+
+  .action-button {
+    width: 100%;
+  }
+}
+
+@media (min-width: 1200px) {
+  .analysis-copy {
+    max-width: 700px;
+  }
+
+  .analysis-title {
+    font-size: 3rem;
+  }
+
+  .analysis-subtitle {
+    font-size: 0.96rem;
+  }
+
+  .form-panel-title {
+    font-size: 1.36rem;
   }
 }

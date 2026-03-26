@@ -83,9 +83,7 @@ export default function UploadForm({ loading, onSubmit }) {
       const preparedUpload = await prepareUploadFile(file);
       if (preparedUpload.optimization) {
         setOptimizationNote(
-          `Optimized image upload from ${formatMegabytes(
-            preparedUpload.optimization.originalBytes,
-          )} to ${formatMegabytes(preparedUpload.optimization.optimizedBytes)} for a faster mobile upload.`,
+          `Optimized from ${formatMegabytes(preparedUpload.optimization.originalBytes)} to ${formatMegabytes(preparedUpload.optimization.optimizedBytes)} before upload.`,
         );
       } else {
         setOptimizationNote("");
@@ -97,48 +95,46 @@ export default function UploadForm({ loading, onSubmit }) {
   }
 
   return (
-    <div className="card border-0 shadow-sm h-100">
-      <div className="card-body p-4">
-        <div className="d-flex justify-content-between align-items-start mb-3">
-          <div>
-            <h2 className="h5 mb-1">Upload Media</h2>
-            <p className="text-secondary mb-0">JPG, JPEG, PNG, or short MP4 clips only.</p>
-          </div>
-          <span className="badge text-bg-light">CPU-safe</span>
+    <section className="form-panel">
+      <div className="form-panel-header">
+        <div>
+          <h2 className="form-panel-title">Upload media</h2>
+          <p className="form-panel-copy">JPG, PNG, JPEG, or short MP4.</p>
+        </div>
+        <span className="form-chip">10 MB image / 20 MB video</span>
+      </div>
+
+      <AlertMessage message={error} />
+      <AlertMessage variant="info" message={optimizationNote} />
+
+      <form onSubmit={handleSubmit} className="d-grid gap-3">
+        <div className="upload-dropzone">
+          <label htmlFor="media-upload" className="upload-dropzone-label">
+            <span className="upload-dropzone-title">{file ? "File ready to analyze" : "Choose a file"}</span>
+            <span className="upload-dropzone-copy">
+              {file ? file.name : "Drag one in or browse from your device."}
+            </span>
+          </label>
+          <input
+            id="media-upload"
+            className="form-control form-control-lg"
+            type="file"
+            accept=".jpg,.jpeg,.png,.mp4"
+            onChange={handleFileChange}
+          />
+          <div className="form-note">Large images are optimized in the browser before upload when possible.</div>
         </div>
 
-        <AlertMessage message={error} />
-        <AlertMessage variant="info" message={optimizationNote} />
-
-        <form onSubmit={handleSubmit} className="d-grid gap-3">
-          <div className="upload-dropzone rounded-4 border border-2 border-dashed p-4 bg-light-subtle">
-            <label htmlFor="media-upload" className="form-label fw-semibold">
-              Select a file
-            </label>
-            <input
-              id="media-upload"
-              className="form-control"
-              type="file"
-              accept=".jpg,.jpeg,.png,.mp4"
-              onChange={handleFileChange}
-            />
-            <div className="form-text mt-2">
-              Images max 10 MB. Videos max 20 MB. Large photos are shrunk in the browser first to help slower mobile
-              connections.
-            </div>
+        {previewUrl && (
+          <div className="preview-panel">
+            <img src={previewUrl} alt="Preview" className="img-fluid rounded-4" />
           </div>
+        )}
 
-          {previewUrl && (
-            <div className="rounded-4 overflow-hidden border bg-white p-2">
-              <img src={previewUrl} alt="Preview" className="img-fluid rounded-3" />
-            </div>
-          )}
-
-          <button type="submit" className="btn btn-primary btn-lg" disabled={loading}>
-            {loading ? "Analyzing..." : "Analyze Upload"}
-          </button>
-        </form>
-      </div>
-    </div>
+        <button type="submit" className="btn btn-primary btn-lg action-button" disabled={loading}>
+          {loading ? "Analyzing..." : "Analyze upload"}
+        </button>
+      </form>
+    </section>
   );
 }

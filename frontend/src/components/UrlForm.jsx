@@ -31,45 +31,37 @@ export default function UrlForm({ loading, onSubmit }) {
   }
 
   return (
-    <div className="card border-0 shadow-sm h-100">
-      <div className="card-body p-4">
-        <div className="d-flex justify-content-between align-items-start mb-3">
-          <div>
-            <h2 className="h5 mb-1">Analyze URL</h2>
-            <p className="text-secondary mb-0">
-              Public YouTube thumbnails and Facebook previews only. Facebook preview videos may include bounded local
-              audio analysis when a small public preview video is available.
-            </p>
-          </div>
-          <span className="badge text-bg-light">Preview-based</span>
+    <section className="form-panel">
+      <div className="form-panel-header">
+        <div>
+          <h2 className="form-panel-title">Analyze a public link</h2>
+          <p className="form-panel-copy">YouTube and Facebook previews only.</p>
+        </div>
+        <span className="form-chip">Preview-based scan</span>
+      </div>
+
+      <AlertMessage message={error} />
+
+      <form onSubmit={handleSubmit} className="d-grid gap-3">
+        <div className="url-input-shell">
+          <label htmlFor="source-url" className="form-label fw-semibold">
+            Paste a public URL
+          </label>
+          <input
+            id="source-url"
+            type="url"
+            className="form-control form-control-lg url-input"
+            placeholder="https://www.youtube.com/watch?v=..."
+            value={url}
+            onChange={(event) => setUrl(event.target.value)}
+          />
+          <div className="form-note">Private or login-gated links cannot be analyzed.</div>
         </div>
 
-        <AlertMessage message={error} />
-
-        <form onSubmit={handleSubmit} className="d-grid gap-3">
-          <div>
-            <label htmlFor="source-url" className="form-label fw-semibold">
-              Public link
-            </label>
-            <input
-              id="source-url"
-              type="url"
-              className="form-control form-control-lg"
-              placeholder="https://www.youtube.com/watch?v=..."
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-            />
-            <div className="form-text">
-              YouTube stays thumbnail-only. Facebook content must expose a public preview image or preview video.
-              Private or login-gated links will fail.
-            </div>
-          </div>
-
-          <button type="submit" className="btn btn-outline-primary btn-lg" disabled={loading}>
-            {loading ? "Analyzing..." : "Analyze URL"}
-          </button>
-        </form>
-      </div>
-    </div>
+        <button type="submit" className="btn btn-primary btn-lg action-button" disabled={loading}>
+          {loading ? "Analyzing..." : "Analyze URL"}
+        </button>
+      </form>
+    </section>
   );
 }

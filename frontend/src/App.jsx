@@ -15,6 +15,43 @@ const EMPTY_HISTORY = {
   results: [],
 };
 
+const THEME_STORAGE_KEY = "ai-media-detector-theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === "light" || storedTheme === "dark") {
+    return storedTheme;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function ThemeIcon({ theme }) {
+  if (theme === "dark") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="theme-icon">
+        <path
+          d="M12 4.75a.75.75 0 0 1 .75.75v1.25a.75.75 0 0 1-1.5 0V5.5a.75.75 0 0 1 .75-.75Zm0 12.5a.75.75 0 0 1 .75.75v1.25a.75.75 0 0 1-1.5 0V18a.75.75 0 0 1 .75-.75Zm7.25-6a.75.75 0 0 1 0 1.5H18a.75.75 0 0 1 0-1.5h1.25Zm-12.5 0a.75.75 0 0 1 0 1.5H5.5a.75.75 0 0 1 0-1.5h1.25Zm9.028-4.278a.75.75 0 0 1 1.06 0l.884.884a.75.75 0 0 1-1.06 1.06l-.884-.883a.75.75 0 0 1 0-1.061Zm-9.5 9.5a.75.75 0 0 1 1.061 0l.884.884a.75.75 0 1 1-1.06 1.06l-.885-.884a.75.75 0 0 1 0-1.06Zm10.384 1.944a.75.75 0 0 1 1.06-1.06l.884.883a.75.75 0 1 1-1.06 1.06l-.884-.883Zm-9.5-9.5a.75.75 0 0 1 1.06-1.06l.885.883a.75.75 0 0 1-1.06 1.06l-.885-.883ZM12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="theme-icon">
+      <path
+        d="M21 14.8A8.8 8.8 0 0 1 9.2 3a.7.7 0 0 0-.9-.9A10.2 10.2 0 1 0 21.9 15.7a.7.7 0 0 0-.9-.9Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("upload");
   const [latestResult, setLatestResult] = useState(null);
@@ -23,10 +60,17 @@ export default function App() {
   const [history, setHistory] = useState(EMPTY_HISTORY);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyPage, setHistoryPage] = useState(1);
+  const [theme, setTheme] = useState(getInitialTheme);
 
   useEffect(() => {
-    loadHistory(1);
+    void loadHistory(1);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-bs-theme", theme);
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   async function loadHistory(page) {
     setHistoryLoading(true);
@@ -52,7 +96,7 @@ export default function App() {
       startTransition(() => {
         setLatestResult(payload.result);
       });
-      loadHistory(1);
+      void loadHistory(1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -69,7 +113,7 @@ export default function App() {
       startTransition(() => {
         setLatestResult(payload.result);
       });
-      loadHistory(1);
+      void loadHistory(1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -77,89 +121,84 @@ export default function App() {
     }
   }
 
+  function toggleTheme() {
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
+  }
+
   return (
     <div className="app-shell">
-      <nav className="navbar navbar-expand-lg bg-white border-bottom sticky-top">
-        <div className="container">
-          <span className="navbar-brand fw-semibold mb-0 h1">AI Media Detector</span>
-          <span className="badge rounded-pill text-bg-light">Django + React</span>
+      <nav className="topbar">
+        <div className="container topbar-inner">
+          <div className="topbar-brand">
+            <span className="topbar-title">AI Media Detector</span>
+          </div>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            <ThemeIcon theme={theme} />
+          </button>
         </div>
       </nav>
 
       <main className="container py-4 py-lg-5">
-        <section className="hero-card rounded-5 p-4 p-lg-5 mb-4">
-          <div className="row g-4 align-items-center">
-            <div className="col-lg-7">
-              <span className="badge text-bg-primary-subtle text-primary-emphasis mb-3">
-                PythonAnywhere free-plan ready
-              </span>
-              <h1 className="display-6 fw-semibold mb-3">
-                Check whether an image, short video, or public social link looks AI-generated.
-              </h1>
-              <p className="lead text-secondary mb-0">
-                The pipeline stays lightweight by combining upload validation, preview extraction, heuristic scoring,
-                and short synchronous CPU-only analysis.
-              </p>
-            </div>
-            <div className="col-lg-5">
-              <div className="stats-panel rounded-4 bg-white p-4 shadow-sm">
-                <div className="small text-uppercase text-secondary fw-semibold mb-3">Runtime guardrails</div>
-                <div className="d-grid gap-2">
-                  <div>Images up to 10 MB</div>
-                  <div>Videos up to 20 MB</div>
-                  <div>Only first 12 seconds sampled</div>
-                  <div>YouTube and Facebook public previews</div>
-                </div>
+        <section className="analysis-stage mx-auto">
+          <div className="analysis-copy text-center">
+            <span className="analysis-kicker">Fast media screening</span>
+            <h1 className="analysis-title">Upload a file or paste a public link to check it instantly.</h1>
+            <p className="analysis-subtitle">
+              The detector keeps the main action front and center, then shows the result as soon as analysis finishes.
+            </p>
+          </div>
+
+          <AlertMessage message={error} />
+
+          <div className="analysis-workspace panel-card">
+            <div className="analysis-column">
+              <div className="mode-switch" role="tablist" aria-label="Input mode">
+                <button
+                  type="button"
+                  className={`mode-switch-button ${activeTab === "upload" ? "active" : ""}`}
+                  onClick={() => setActiveTab("upload")}
+                  aria-pressed={activeTab === "upload"}
+                >
+                  Upload
+                </button>
+                <button
+                  type="button"
+                  className={`mode-switch-button ${activeTab === "url" ? "active" : ""}`}
+                  onClick={() => setActiveTab("url")}
+                  aria-pressed={activeTab === "url"}
+                >
+                  URL
+                </button>
               </div>
+
+              {activeTab === "upload" ? (
+                <UploadForm loading={submitting} onSubmit={handleUpload} />
+              ) : (
+                <UrlForm loading={submitting} onSubmit={handleUrl} />
+              )}
+            </div>
+
+            <div className="analysis-column">
+              {submitting ? (
+                <LoadingState
+                  label={activeTab === "upload" ? "Analyzing upload" : "Analyzing link"}
+                  detail="This usually finishes in a few seconds."
+                />
+              ) : (
+                <ResultCard result={latestResult} />
+              )}
             </div>
           </div>
         </section>
 
-        <AlertMessage message={error} />
-
-        <section className="mb-4">
-          <ul className="nav nav-pills gap-2">
-            <li className="nav-item">
-              <button
-                type="button"
-                className={`nav-link ${activeTab === "upload" ? "active" : "bg-white text-dark"}`}
-                onClick={() => setActiveTab("upload")}
-              >
-                Upload
-              </button>
-            </li>
-            <li className="nav-item">
-              <button
-                type="button"
-                className={`nav-link ${activeTab === "url" ? "active" : "bg-white text-dark"}`}
-                onClick={() => setActiveTab("url")}
-              >
-                URL
-              </button>
-            </li>
-          </ul>
-        </section>
-
-        <section className="row g-4 mb-4">
-          <div className="col-lg-7">
-            {activeTab === "upload" ? (
-              <UploadForm loading={submitting} onSubmit={handleUpload} />
-            ) : (
-              <UrlForm loading={submitting} onSubmit={handleUrl} />
-            )}
-          </div>
-          <div className="col-lg-5">
-            {submitting ? <LoadingState label="Running detection..." /> : <ResultCard result={latestResult} />}
-          </div>
-        </section>
-
-        <section>
-          <HistoryTable
-            history={history}
-            loading={historyLoading}
-            page={historyPage}
-            onPageChange={loadHistory}
-          />
+        <section className="history-section mx-auto">
+          <HistoryTable history={history} loading={historyLoading} page={historyPage} onPageChange={loadHistory} />
         </section>
       </main>
     </div>

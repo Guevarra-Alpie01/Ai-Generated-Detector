@@ -122,7 +122,7 @@ export default function UploadForm({ loading, onSubmit }) {
             accept=".jpg,.jpeg,.png,.mp4"
             onChange={handleFileChange}
           />
-          <div className="form-note">Large images are optimized in the browser before upload when possible.</div>
+          <div className="form-note">Original images are preserved unless optimization is needed to fit upload limits.</div>
         </div>
 
         {previewUrl && (

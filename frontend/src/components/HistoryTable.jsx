@@ -1,17 +1,33 @@
-function formatPercentage(value) {
+function clampPercentage(value) {
   const numeric = Number(value || 0);
   const normalized = numeric > 1 ? numeric / 100 : numeric;
-  return `${(Math.max(0, Math.min(1, normalized)) * 100).toFixed(0)}%`;
+  return Math.max(0, Math.min(1, normalized));
 }
 
-function labelClass(label) {
-  if (label === "AI-generated") {
-    return "text-bg-danger";
+function formatPercentage(value) {
+  return `${(clampPercentage(value) * 100).toFixed(0)}%`;
+}
+
+function getAiProbability(item) {
+  const aiScore = Number(item?.score_breakdown?.ai_score);
+  if (Number.isFinite(aiScore)) {
+    return clampPercentage(aiScore);
   }
-  if (label === "Uncertain") {
-    return "text-bg-warning";
+
+  const confidence = clampPercentage(item?.confidence_score);
+  if (item?.result_label === "AI-generated") {
+    return confidence;
   }
-  return "text-bg-success";
+  if (item?.result_label === "Likely real") {
+    return 1 - confidence;
+  }
+  return 0.5;
+}
+
+function getDisplayLabel(item) {
+  return getAiProbability(item) >= 0.5
+    ? { text: "Likely AI-generated", className: "text-bg-danger" }
+    : { text: "Likely real", className: "text-bg-success" };
 }
 
 export default function HistoryTable({ history, loading, page, onPageChange }) {
@@ -45,17 +61,21 @@ export default function HistoryTable({ history, loading, page, onPageChange }) {
               </tr>
             )}
 
-            {history.results.map((item) => (
-              <tr key={item.id}>
-                <td className="history-source-cell">{item.original_filename || item.source_url || "Uploaded media"}</td>
-                <td className="text-capitalize">{item.source_type}</td>
-                <td>
-                  <span className={`badge ${labelClass(item.result_label)}`}>{item.result_label}</span>
-                </td>
-                <td>{formatPercentage(item.confidence_score)}</td>
-                <td>{new Date(item.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
+            {history.results.map((item) => {
+              const displayLabel = getDisplayLabel(item);
+
+              return (
+                <tr key={item.id}>
+                  <td className="history-source-cell">{item.original_filename || item.source_url || "Uploaded media"}</td>
+                  <td className="text-capitalize">{item.source_type}</td>
+                  <td>
+                    <span className={`badge ${displayLabel.className}`}>{displayLabel.text}</span>
+                  </td>
+                  <td>{formatPercentage(item.confidence_score)}</td>
+                  <td>{new Date(item.created_at).toLocaleString()}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

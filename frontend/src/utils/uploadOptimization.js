@@ -48,6 +48,8 @@ function buildOptimizedName(file, mimeType) {
   return `${stem}${suffix}`;
 }
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export async function prepareUploadFile(file) {
   if (!file || !file.type.startsWith("image/")) {
     return { file, optimization: null };
@@ -55,8 +57,8 @@ export async function prepareUploadFile(file) {
 
   const image = await loadImageFromFile(file);
   const maxDimension = 1600;
-  const needsResize = image.width > maxDimension || image.height > maxDimension;
-  const needsCompression = file.size > 1.5 * 1024 * 1024;
+  const needsResize = file.size > MAX_IMAGE_BYTES && (image.width > maxDimension || image.height > maxDimension);
+  const needsCompression = file.size > MAX_IMAGE_BYTES;
   if (!needsResize && !needsCompression) {
     return { file, optimization: null };
   }

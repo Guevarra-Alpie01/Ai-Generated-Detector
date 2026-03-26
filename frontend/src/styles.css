@@ -324,6 +324,39 @@ body {
   font-size: 0.88rem;
 }
 
+.minimal-result-shell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.minimal-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.minimal-result-metric {
+  border-radius: 24px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-soft);
+  padding: 1rem;
+}
+
+.minimal-result-metric-label {
+  color: var(--app-muted);
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.minimal-result-metric-value {
+  margin-top: 0.35rem;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .result-score-grid,
 .result-meta-grid {
   display: grid;
@@ -466,6 +499,7 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .minimal-result-grid,
   .result-score-grid,
   .result-meta-grid {
     grid-template-columns: 1fr;

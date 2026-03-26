@@ -8,23 +8,6 @@ function formatPercentage(value) {
   return `${Math.round(clampPercentage(value) * 100)}%`;
 }
 
-function badgeClass(label) {
-  if (label === "AI-generated") {
-    return "text-bg-danger";
-  }
-  if (label === "Uncertain") {
-    return "text-bg-warning";
-  }
-  return "text-bg-success";
-}
-
-function metricToneClass(type) {
-  if (type === "ai") {
-    return "metric-bar metric-bar-ai";
-  }
-  return "metric-bar metric-bar-real";
-}
-
 function getAiProbability(result) {
   const aiScore = Number(result?.score_breakdown?.ai_score);
   if (Number.isFinite(aiScore)) {
@@ -41,11 +24,36 @@ function getAiProbability(result) {
   return 0.5;
 }
 
+function getDisplayResult(result) {
+  const aiProbability = getAiProbability(result);
+  const label = aiProbability >= 0.5 ? "Likely AI-generated" : "Likely real";
+  const badgeClass = aiProbability >= 0.5 ? "text-bg-danger" : "text-bg-success";
+
+  return {
+    aiProbability,
+    realProbability: 1 - aiProbability,
+    label,
+    badgeClass,
+  };
+}
+
 function formatCreatedAt(value) {
   if (!value) {
     return "Just now";
   }
   return new Date(value).toLocaleString();
+}
+
+function MetricCard({ label, value, tone }) {
+  return (
+    <div className="minimal-result-metric">
+      <div className="minimal-result-metric-label">{label}</div>
+      <div className="minimal-result-metric-value">{value}</div>
+      <div className={`metric-bar ${tone === "ai" ? "metric-bar-ai" : "metric-bar-real"}`}>
+        <span style={{ width: value }} />
+      </div>
+    </div>
+  );
 }
 
 export default function ResultCard({ result }) {
@@ -54,72 +62,29 @@ export default function ResultCard({ result }) {
       <section className="result-shell result-placeholder">
         <div className="result-eyebrow">Awaiting analysis</div>
         <h2 className="result-title">Results appear here as soon as the scan finishes.</h2>
-        <p className="result-copy mb-0">Run an upload or URL check to see the real-vs-AI breakdown instantly.</p>
+        <p className="result-copy mb-0">Run an upload or URL check to see the result instantly.</p>
       </section>
     );
   }
 
   const source = result.original_filename || result.source_url || result.source_type;
-  const aiProbability = getAiProbability(result);
-  const realProbability = 1 - aiProbability;
-  const confidence = clampPercentage(result.confidence_score);
-  const providersUsed = Array.isArray(result.providers_used) ? result.providers_used : [];
-  const signalPreview = Array.isArray(result.signals) ? result.signals.slice(0, 3) : [];
+  const displayResult = getDisplayResult(result);
 
   return (
-    <section className="result-shell">
+    <section className="result-shell minimal-result-shell">
       <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
           <div className="result-eyebrow">Latest result</div>
           <h2 className="result-title">{source}</h2>
           <p className="result-copy mb-0">Completed {formatCreatedAt(result.created_at)}</p>
         </div>
-        <span className={`badge ${badgeClass(result.result_label)} result-badge`}>{result.result_label}</span>
+        <span className={`badge ${displayResult.badgeClass} result-badge`}>{displayResult.label}</span>
       </div>
 
-      <div className="result-score-grid">
-        <div className="result-metric-card">
-          <div className="metric-label">Likelihood of being real</div>
-          <div className="metric-value">{formatPercentage(realProbability)}</div>
-          <div className={metricToneClass("real")}>
-            <span style={{ width: formatPercentage(realProbability) }} />
-          </div>
-        </div>
-        <div className="result-metric-card">
-          <div className="metric-label">Likelihood of being AI-generated</div>
-          <div className="metric-value">{formatPercentage(aiProbability)}</div>
-          <div className={metricToneClass("ai")}>
-            <span style={{ width: formatPercentage(aiProbability) }} />
-          </div>
-        </div>
+      <div className="minimal-result-grid">
+        <MetricCard label="Likely real" value={formatPercentage(displayResult.realProbability)} tone="real" />
+        <MetricCard label="Likely AI-generated" value={formatPercentage(displayResult.aiProbability)} tone="ai" />
       </div>
-
-      <div className="result-meta-grid">
-        <div className="result-meta-card">
-          <div className="meta-label">Decision confidence</div>
-          <div className="meta-value">{formatPercentage(confidence)}</div>
-        </div>
-        <div className="result-meta-card">
-          <div className="meta-label">Source type</div>
-          <div className="meta-value text-capitalize">{result.source_type}</div>
-        </div>
-        <div className="result-meta-card">
-          <div className="meta-label">Providers used</div>
-          <div className="meta-value">{providersUsed.length > 0 ? providersUsed.join(", ") : "Local only"}</div>
-        </div>
-      </div>
-
-      <p className="result-summary">{result.details}</p>
-
-      {signalPreview.length > 0 && (
-        <div className="signal-list">
-          {signalPreview.map((signal) => (
-            <div className="signal-pill" key={signal}>
-              {signal}
-            </div>
-          ))}
-        </div>
-      )}
     </section>
   );
 }

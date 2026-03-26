@@ -29,6 +29,7 @@ export default function UploadForm({ loading, onSubmit }) {
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
   const [optimizationNote, setOptimizationNote] = useState("");
+  const [preparationNote, setPreparationNote] = useState("");
 
   useEffect(() => {
     return () => {
@@ -46,9 +47,11 @@ export default function UploadForm({ loading, onSubmit }) {
     }
 
     setFile(nextFile);
+    setPreparationNote("");
     if (!nextFile) {
       setError("");
       setOptimizationNote("");
+      setPreparationNote("");
       return;
     }
 
@@ -81,6 +84,7 @@ export default function UploadForm({ loading, onSubmit }) {
     setError("");
     try {
       const preparedUpload = await prepareUploadFile(file);
+      setPreparationNote((preparedUpload.feedbackMessages || []).join(" "));
       if (preparedUpload.optimization) {
         setOptimizationNote(
           `Optimized from ${formatMegabytes(preparedUpload.optimization.originalBytes)} to ${formatMegabytes(preparedUpload.optimization.optimizedBytes)} before upload.`,
@@ -106,6 +110,7 @@ export default function UploadForm({ loading, onSubmit }) {
 
       <AlertMessage message={error} />
       <AlertMessage variant="info" message={optimizationNote} />
+      <AlertMessage variant="warning" message={preparationNote} />
 
       <form onSubmit={handleSubmit} className="d-grid gap-3">
         <div className="upload-dropzone">
@@ -122,7 +127,9 @@ export default function UploadForm({ loading, onSubmit }) {
             accept=".jpg,.jpeg,.png,.mp4"
             onChange={handleFileChange}
           />
-          <div className="form-note">Original images are preserved unless optimization is needed to fit upload limits.</div>
+          <div className="form-note">
+            Phones on slow data or with limited storage automatically switch to a lighter upload mode when needed.
+          </div>
         </div>
 
         {previewUrl && (

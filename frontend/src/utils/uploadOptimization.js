@@ -12,7 +12,41 @@ function getNavigatorConnection() {
   return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
 }
 
-function detectUploadContext(file) {
+async function readStorageEstimate() {
+  if (typeof navigator === "undefined" || !navigator.storage?.estimate) {
+    return {
+      quotaBytes: null,
+      usageBytes: null,
+      availableBytes: null,
+      lowStorageDevice: false,
+    };
+  }
+
+  try {
+    const { quota, usage } = await navigator.storage.estimate();
+    const quotaBytes = typeof quota === "number" && Number.isFinite(quota) ? quota : null;
+    const usageBytes = typeof usage === "number" && Number.isFinite(usage) ? usage : null;
+    const availableBytes =
+      quotaBytes !== null && usageBytes !== null ? Math.max(0, quotaBytes - usageBytes) : null;
+    const lowStorageDevice = availableBytes !== null && availableBytes < 256 * 1024 * 1024;
+
+    return {
+      quotaBytes,
+      usageBytes,
+      availableBytes,
+      lowStorageDevice,
+    };
+  } catch {
+    return {
+      quotaBytes: null,
+      usageBytes: null,
+      availableBytes: null,
+      lowStorageDevice: false,
+    };
+  }
+}
+
+async function detectUploadContext(file) {
   if (typeof navigator === "undefined") {
     return {
       mobileBrowser: false,
@@ -21,11 +55,16 @@ function detectUploadContext(file) {
       connectionEffectiveType: "",
       networkDownlinkMbps: null,
       deviceMemoryGb: null,
+      lowStorageDevice: false,
+      storageQuotaBytes: null,
+      storageUsageBytes: null,
+      storageAvailableBytes: null,
       preferFastAnalysis: false,
     };
   }
 
   const connection = getNavigatorConnection();
+  const storage = await readStorageEstimate();
   const connectionEffectiveType = connection?.effectiveType || "";
   const saveData = Boolean(connection?.saveData);
   const networkDownlinkMbps =
@@ -38,7 +77,10 @@ function detectUploadContext(file) {
   const slowConnection =
     saveData || ["slow-2g", "2g", "3g"].includes(connectionEffectiveType) || (networkDownlinkMbps !== null && networkDownlinkMbps < 1.5);
   const preferFastAnalysis =
-    slowConnection || (mobileBrowser && file.size > 4 * 1024 * 1024) || (deviceMemoryGb !== null && deviceMemoryGb <= 4);
+    slowConnection ||
+    storage.lowStorageDevice ||
+    (mobileBrowser && file.size > 4 * 1024 * 1024) ||
+    (deviceMemoryGb !== null && deviceMemoryGb <= 4);
 
   return {
     mobileBrowser,
@@ -47,6 +89,10 @@ function detectUploadContext(file) {
     connectionEffectiveType,
     networkDownlinkMbps,
     deviceMemoryGb,
+    lowStorageDevice: storage.lowStorageDevice,
+    storageQuotaBytes: storage.quotaBytes,
+    storageUsageBytes: storage.usageBytes,
+    storageAvailableBytes: storage.availableBytes,
     preferFastAnalysis,
   };
 }
@@ -108,6 +154,10 @@ function buildClientMetadata(file, optimization = null, context = {}, image = nu
     connection_effective_type: context.connectionEffectiveType || undefined,
     network_downlink_mbps: context.networkDownlinkMbps ?? undefined,
     device_memory_gb: context.deviceMemoryGb ?? undefined,
+    low_storage_device: context.lowStorageDevice || undefined,
+    storage_quota_bytes: context.storageQuotaBytes ?? undefined,
+    storage_usage_bytes: context.storageUsageBytes ?? undefined,
+    storage_available_bytes: context.storageAvailableBytes ?? undefined,
     original_width: image?.width || undefined,
     original_height: image?.height || undefined,
   };
@@ -127,34 +177,70 @@ function buildClientMetadata(file, optimization = null, context = {}, image = nu
 }
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const MOBILE_OPTIMIZATION_TRIGGER_BYTES = 4 * 1024 * 1024;
+const MOBILE_OPTIMIZATION_TRIGGER_BYTES = 2.5 * 1024 * 1024;
 
-export async function prepareUploadFile(file) {
-  if (!file) {
-    return { file, optimization: null, clientMetadata: null };
+function buildPreparationMessages(file, context, optimization = null) {
+  const messages = [];
+
+  if (context.slowConnection) {
+    messages.push("Slow connection detected. Mobile-friendly upload mode is on to improve the chance that analysis finishes.");
   }
 
-  const context = detectUploadContext(file);
-
-  if (!file.type.startsWith("image/")) {
-    return { file, optimization: null, clientMetadata: buildClientMetadata(file, null, context) };
+  if (context.lowStorageDevice) {
+    messages.push("Limited free storage was detected on this device, so the upload is prepared in a lighter format when possible.");
   }
 
-  const image = await loadImageFromFile(file);
-  const maxDimension = context.preferFastAnalysis ? 1440 : 1600;
-  const veryLargeResolution = image.width * image.height >= 12_000_000;
-  const mobileOptimizationNeeded =
-    context.preferFastAnalysis &&
-    file.size > MOBILE_OPTIMIZATION_TRIGGER_BYTES &&
-    (image.width > maxDimension || image.height > maxDimension || veryLargeResolution);
-  const needsResize =
-    (file.size > MAX_IMAGE_BYTES || mobileOptimizationNeeded) && (image.width > maxDimension || image.height > maxDimension);
-  const needsCompression = file.size > MAX_IMAGE_BYTES || mobileOptimizationNeeded;
-  if (!needsResize && !needsCompression) {
-    return { file, optimization: null, clientMetadata: buildClientMetadata(file, null, context, image) };
+  if (context.preferFastAnalysis && file.type.startsWith("video/")) {
+    messages.push("Large mobile videos use a faster analysis path. Shorter clips and Wi-Fi are still the most reliable option.");
   }
 
-  const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+  if (optimization) {
+    messages.push("If the network drops during upload, retrying the same file can still reuse the server's recent-result cache.");
+  }
+
+  return messages;
+}
+
+function buildOptimizationCandidates(context, image) {
+  const primaryDimension = context.preferFastAnalysis ? 1440 : 1600;
+  const candidates = [
+    { maxDimension: primaryDimension, quality: context.preferFastAnalysis ? 0.8 : 0.82 },
+  ];
+
+  if (context.preferFastAnalysis || context.lowStorageDevice) {
+    candidates.push({ maxDimension: 1280, quality: 0.72 });
+    candidates.push({ maxDimension: 1080, quality: 0.64 });
+  }
+
+  if (context.slowConnection) {
+    candidates.push({ maxDimension: 960, quality: 0.58 });
+  }
+
+  return candidates.filter(
+    (candidate, index, allCandidates) =>
+      index ===
+      allCandidates.findIndex(
+        (existingCandidate) =>
+          existingCandidate.maxDimension === candidate.maxDimension &&
+          existingCandidate.quality === candidate.quality,
+      ),
+  );
+}
+
+function resolveImageTargetBytes(file, context) {
+  if (context.slowConnection || context.lowStorageDevice) {
+    return Math.min(MAX_IMAGE_BYTES, 2.25 * 1024 * 1024);
+  }
+
+  if (context.preferFastAnalysis) {
+    return Math.min(MAX_IMAGE_BYTES, 3.5 * 1024 * 1024);
+  }
+
+  return MAX_IMAGE_BYTES;
+}
+
+async function renderOptimizedImageCandidate(image, file, candidate) {
+  const scale = Math.min(1, candidate.maxDimension / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * scale));
   const height = Math.max(1, Math.round(image.height * scale));
 
@@ -163,34 +249,106 @@ export async function prepareUploadFile(file) {
   canvas.height = height;
   const canvasContext = canvas.getContext("2d", { alpha: true });
   if (!canvasContext) {
-    return { file, optimization: null, clientMetadata: null };
+    return null;
   }
 
   canvasContext.drawImage(image, 0, 0, width, height);
   const keepPng = file.type === "image/png" && hasTransparentPixels(canvasContext, width, height);
   const mimeType = keepPng ? "image/png" : "image/jpeg";
-  const quality = keepPng ? undefined : context.preferFastAnalysis ? 0.8 : 0.82;
+  const quality = keepPng ? undefined : candidate.quality;
   const optimizedBlob = await canvasToBlob(canvas, mimeType, quality);
 
-  if (optimizedBlob.size >= file.size * 0.95) {
-    return { file, optimization: null, clientMetadata: buildClientMetadata(file, null, context, image) };
+  return {
+    blob: optimizedBlob,
+    width,
+    height,
+    mimeType,
+  };
+}
+
+export async function prepareUploadFile(file) {
+  if (!file) {
+    return { file, optimization: null, clientMetadata: null, feedbackMessages: [] };
   }
 
-  const optimizedFile = new File([optimizedBlob], buildOptimizedName(file, mimeType), {
-    type: mimeType,
+  const context = await detectUploadContext(file);
+
+  if (!file.type.startsWith("image/")) {
+    return {
+      file,
+      optimization: null,
+      clientMetadata: buildClientMetadata(file, null, context),
+      feedbackMessages: buildPreparationMessages(file, context),
+    };
+  }
+
+  const image = await loadImageFromFile(file);
+  const longestDimension = Math.max(image.width, image.height);
+  const maxDimension = context.preferFastAnalysis ? 1440 : 1600;
+  const veryLargeResolution = image.width * image.height >= 10_000_000;
+  const mobileOptimizationNeeded =
+    context.preferFastAnalysis &&
+    file.size > MOBILE_OPTIMIZATION_TRIGGER_BYTES &&
+    (image.width > maxDimension || image.height > maxDimension || veryLargeResolution || longestDimension > 2000);
+  const needsResize =
+    (file.size > MAX_IMAGE_BYTES || mobileOptimizationNeeded) && (image.width > maxDimension || image.height > maxDimension);
+  const needsCompression =
+    file.size > MAX_IMAGE_BYTES ||
+    mobileOptimizationNeeded ||
+    ((context.slowConnection || context.lowStorageDevice) && file.size > 1.8 * 1024 * 1024);
+  if (!needsResize && !needsCompression) {
+    return {
+      file,
+      optimization: null,
+      clientMetadata: buildClientMetadata(file, null, context, image),
+      feedbackMessages: buildPreparationMessages(file, context),
+    };
+  }
+
+  const targetBytes = resolveImageTargetBytes(file, context);
+  const candidates = buildOptimizationCandidates(context, image);
+  let bestCandidate = null;
+
+  for (const candidate of candidates) {
+    const renderedCandidate = await renderOptimizedImageCandidate(image, file, candidate);
+    if (!renderedCandidate) {
+      continue;
+    }
+
+    if (!bestCandidate || renderedCandidate.blob.size < bestCandidate.blob.size) {
+      bestCandidate = renderedCandidate;
+    }
+
+    if (renderedCandidate.blob.size <= targetBytes) {
+      break;
+    }
+  }
+
+  if (!bestCandidate || bestCandidate.blob.size >= file.size * 0.97) {
+    return {
+      file,
+      optimization: null,
+      clientMetadata: buildClientMetadata(file, null, context, image),
+      feedbackMessages: buildPreparationMessages(file, context),
+    };
+  }
+
+  const optimizedFile = new File([bestCandidate.blob], buildOptimizedName(file, bestCandidate.mimeType), {
+    type: bestCandidate.mimeType,
     lastModified: file.lastModified,
   });
 
   const optimization = {
     originalBytes: file.size,
     optimizedBytes: optimizedFile.size,
-    width,
-    height,
+    width: bestCandidate.width,
+    height: bestCandidate.height,
   };
 
   return {
     file: optimizedFile,
     optimization,
     clientMetadata: buildClientMetadata(file, optimization, context, image),
+    feedbackMessages: buildPreparationMessages(file, context, optimization),
   };
 }

@@ -33,6 +33,47 @@ function buildUploadTimeoutMs(file, clientMetadata = null) {
   return Math.min(timeoutMs, isVideo ? 300000 : 180000);
 }
 
+function shouldRetryMobileUpload(clientMetadata = null) {
+  return Boolean(
+    clientMetadata?.prefer_fast_analysis ||
+      clientMetadata?.slow_connection ||
+      clientMetadata?.mobile_browser ||
+      clientMetadata?.low_storage_device,
+  );
+}
+
+function isRetryableUploadError(error) {
+  const message = String(error?.message || "");
+  return (
+    /took longer than/i.test(message) ||
+    /failed to fetch/i.test(message) ||
+    /network/i.test(message) ||
+    /load failed/i.test(message)
+  );
+}
+
+function enhanceUploadError(error, clientMetadata = null) {
+  const message = String(error?.message || "Upload analysis failed.");
+  const mobileHint =
+    clientMetadata?.slow_connection || clientMetadata?.low_storage_device || clientMetadata?.mobile_browser;
+
+  if (/failed to fetch|network|load failed/i.test(message)) {
+    return new Error(
+      mobileHint
+        ? "The upload reached an unstable connection before analysis could finish. The app already tried a mobile-friendly retry. Please try again on a steadier connection or with a smaller file."
+        : "The upload could not stay connected long enough to finish analysis. Please try again.",
+    );
+  }
+
+  if (/took longer than/i.test(message)) {
+    return new Error(
+      `${message} The app already tried a lighter mobile pass, and retrying the same file may still reuse a cached result if the first request reached the server.`,
+    );
+  }
+
+  return error instanceof Error ? error : new Error(message);
+}
+
 function createClientSessionKey() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -105,25 +146,48 @@ async function parseResponse(response) {
 }
 
 export async function submitUploadDetection(file, clientMetadata = null) {
-  const formData = new FormData();
-  formData.append("file", file);
-  if (clientMetadata) {
-    formData.append("client_metadata", JSON.stringify(clientMetadata));
-  }
+  const requestUpload = async (timeoutMs) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (clientMetadata) {
+      formData.append("client_metadata", JSON.stringify(clientMetadata));
+    }
+
+    const response = await fetchWithTimeout(
+      "/api/detect/upload/",
+      {
+        method: "POST",
+        headers: withClientSessionHeaders(),
+        body: formData,
+      },
+      timeoutMs,
+      file.type.startsWith("video/") ? "Video detection" : "Image detection",
+    );
+
+    return parseResponse(response);
+  };
+
   const timeoutMs = buildUploadTimeoutMs(file, clientMetadata);
+  const mobileRetryAllowed = shouldRetryMobileUpload(clientMetadata) && typeof navigator !== "undefined" && navigator.onLine !== false;
 
-  const response = await fetchWithTimeout(
-    "/api/detect/upload/",
-    {
-      method: "POST",
-      headers: withClientSessionHeaders(),
-      body: formData,
-    },
-    timeoutMs,
-    file.type.startsWith("video/") ? "Video detection" : "Image detection",
-  );
+  try {
+    return await requestUpload(timeoutMs);
+  } catch (error) {
+    if (!mobileRetryAllowed || !isRetryableUploadError(error)) {
+      throw enhanceUploadError(error, clientMetadata);
+    }
 
-  return parseResponse(response);
+    const retryTimeoutMs = Math.min(
+      timeoutMs + (file.type.startsWith("video/") ? 90000 : 60000),
+      file.type.startsWith("video/") ? 360000 : 240000,
+    );
+
+    try {
+      return await requestUpload(retryTimeoutMs);
+    } catch (retryError) {
+      throw enhanceUploadError(retryError, clientMetadata);
+    }
+  }
 }
 
 export async function submitUrlDetection(url) {

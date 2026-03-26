@@ -5,6 +5,7 @@ from media_handler.constants import SourceTypes
 
 
 class DetectionResult(models.Model):
+    client_session_key = models.CharField(max_length=64, blank=True, db_index=True)
     source_type = models.CharField(max_length=20, choices=SourceTypes.CHOICES, db_index=True)
     content_sha256 = models.CharField(max_length=64, blank=True, db_index=True)
     uploaded_file = models.FileField(upload_to="uploads/", blank=True, null=True)

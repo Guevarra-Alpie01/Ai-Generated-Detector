@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useState } from "react";
 
-import { fetchDetectionHistory, submitUploadDetection, submitUrlDetection } from "./api/client";
+import { fetchDetectionHistory, resetClientSessionHistory, submitUploadDetection, submitUrlDetection } from "./api/client";
 import AlertMessage from "./components/AlertMessage";
 import HistoryTable from "./components/HistoryTable";
 import LoadingState from "./components/LoadingState";
@@ -64,6 +64,17 @@ export default function App() {
 
   useEffect(() => {
     void loadHistory(1);
+  }, []);
+
+  useEffect(() => {
+    function handlePageHide() {
+      void resetClientSessionHistory();
+    }
+
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+    };
   }, []);
 
   useEffect(() => {

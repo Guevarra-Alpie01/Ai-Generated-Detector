@@ -23,6 +23,10 @@ from results.models import DetectionResult
 from results.serializers import DetectionResultSerializer
 
 
+def _client_session_key(request) -> str:
+    return (request.headers.get("X-Client-Session", "") or "").strip()[:64]
+
+
 def _persist_detection_outcome(result: DetectionResult, outcome: DetectionOutcome) -> None:
     result.result_label = outcome.label
     result.confidence_score = outcome.confidence
@@ -86,11 +90,13 @@ class UploadDetectionAPIView(APIView):
         uploaded_file = serializer.validated_data["file"]
         source_type = serializer.validated_data["source_type"]
         client_metadata = serializer.validated_data.get("client_metadata") or {}
+        client_session_key = _client_session_key(request)
         content_sha256 = hash_uploaded_file(uploaded_file)
         cached_result = find_recent_upload_result(content_sha256, source_type)
         if cached_result is not None:
             cloned_result = clone_cached_result(
                 cached_result,
+                client_session_key=client_session_key,
                 source_type=source_type,
                 original_filename=uploaded_file.name,
                 content_sha256=content_sha256,
@@ -115,6 +121,7 @@ class UploadDetectionAPIView(APIView):
                 )
 
             result = DetectionResult.objects.create(
+                client_session_key=client_session_key,
                 source_type=source_type,
                 original_filename=uploaded_file.name,
                 content_sha256=content_sha256,
@@ -155,10 +162,12 @@ class URLDetectionAPIView(APIView):
 
         normalized_url = serializer.validated_data["normalized_url"]
         source_type = serializer.validated_data["source_type"]
+        client_session_key = _client_session_key(request)
         cached_result = find_recent_url_result(normalized_url, source_type)
         if cached_result is not None:
             cloned_result = clone_cached_result(
                 cached_result,
+                client_session_key=client_session_key,
                 source_type=source_type,
                 source_url=normalized_url,
             )
@@ -199,6 +208,7 @@ class URLDetectionAPIView(APIView):
                 snapshot.cleanup()
 
         result = DetectionResult.objects.create(
+            client_session_key=client_session_key,
             source_type=source_type,
             source_url=normalized_url,
             result_label=outcome.label,

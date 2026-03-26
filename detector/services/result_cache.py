@@ -59,6 +59,7 @@ def find_recent_url_result(source_url: str, source_type: str) -> DetectionResult
 def clone_cached_result(
     cached_result: DetectionResult,
     *,
+    client_session_key: str = "",
     source_type: str,
     original_filename: str = "",
     source_url: str = "",
@@ -79,6 +80,7 @@ def clone_cached_result(
     }
 
     return DetectionResult.objects.create(
+        client_session_key=client_session_key,
         source_type=source_type,
         content_sha256=content_sha256,
         source_url=source_url,

@@ -22,6 +22,7 @@ from detector.services.providers.reality_defender_provider import RealityDefende
 from detector.services.provider_registry import ProviderRegistry
 from detector.services.score_aggregator import ScoreAggregator
 from detector.services.scoring import DetectionOutcome, clamp_score, label_from_probability, weighted_score
+from detector.utils import image_features
 from detector.utils.metadata_checks import assess_image_metadata
 from detector.utils.url_media_extract import PublicMediaSnapshot
 from media_handler.constants import SourceTypes
@@ -148,6 +149,18 @@ class ScoringUtilityTests(SimpleTestCase):
 
 
 class LocalDetectorTests(SimpleTestCase):
+    def test_image_feature_metrics_fall_back_when_numpy_fft_errors(self):
+        grayscale = Image.new("L", (64, 64), color=128)
+
+        with patch("detector.utils.image_features.np", object()):
+            with patch("detector.utils.image_features._frequency_metrics_fft", side_effect=RuntimeError("numpy fft failed")):
+                metrics = image_features._frequency_metrics(grayscale)
+
+        self.assertIn("low_frequency_ratio", metrics)
+        self.assertIn("mid_frequency_ratio", metrics)
+        self.assertIn("high_frequency_ratio", metrics)
+        self.assertIn("spectral_spike_ratio", metrics)
+
     def test_metadata_assessment_treats_photoshop_export_as_edited_real(self):
         score, notes = assess_image_metadata(
             {

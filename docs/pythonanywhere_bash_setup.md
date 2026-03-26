@@ -246,6 +246,123 @@ If the frontend changed, upload the new `frontend/dist/` folder before reloading
 
 Then go back to the `Web` tab and click `Reload`.
 
+## 13. Optional: stop deploying local test files
+
+If you want smaller production uploads, add the test-file ignore rules locally and then remove any already tracked test files from Git. A `.gitignore` change alone does not remove files that are already tracked.
+
+On your local machine:
+
+```bash
+cd <your-local-repo>
+git rm --cached detector/tests.py detector/tests_audio.py media_handler/tests.py results/tests.py
+git commit -m "Stop tracking local test files in deployment"
+git push
+```
+
+On PythonAnywhere:
+
+```bash
+cd ~/aidetector
+workon aidetector-env
+git pull
+```
+
+If old test files are still sitting on disk after the pull, list only the project test files first:
+
+```bash
+find ~/aidetector -path "*/.git" -prune -o \( -name "test.py" -o -name "tests.py" -o -name "test_*.py" -o -name "tests_*.py" \) -print
+```
+
+Then remove only the test files from your project folder, not files inside the virtualenv:
+
+```bash
+rm -f ~/aidetector/detector/tests.py
+rm -f ~/aidetector/detector/tests_audio.py
+rm -f ~/aidetector/media_handler/tests.py
+rm -f ~/aidetector/results/tests.py
+```
+
+After that, refresh Django as usual:
+
+```bash
+python manage.py collectstatic --noinput
+python manage.py check
+```
+
+Then reload the web app in the `Web` tab.
+
+## 14. Uploading this latest change
+
+On your local machine:
+
+1. Open the project folder.
+2. Rebuild the frontend so `frontend/dist/` contains the newest files.
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+3. Commit and push your latest code if you deploy with Git.
+
+```bash
+git add .
+git commit -m "Update detector and deployment setup"
+git push
+```
+
+If you deploy by zip instead, create a new project zip after rebuilding the frontend and upload that updated zip to PythonAnywhere.
+
+On PythonAnywhere:
+
+1. Open a Bash console.
+2. Activate your project and virtualenv.
+
+```bash
+cd ~/aidetector
+workon aidetector-env
+```
+
+3. Pull or upload the latest code.
+
+```bash
+git pull
+```
+
+4. Reinstall dependencies if `requirements.txt` changed.
+
+```bash
+pip install -r requirements.txt
+```
+
+5. Apply database changes.
+
+```bash
+python manage.py migrate
+```
+
+6. Refresh static files.
+
+```bash
+python manage.py collectstatic --noinput
+```
+
+7. Run a quick health check.
+
+```bash
+python manage.py check
+```
+
+8. Go to the `Web` tab and click `Reload`.
+
+9. Test the live site:
+   - open `/`
+   - upload an image
+   - upload a short MP4
+   - check `/api/results/`
+
 ## Troubleshooting
 
 - If the homepage loads a fallback page instead of the React app, `frontend/dist/` is missing.
@@ -254,3 +371,4 @@ Then go back to the `Web` tab and click `Reload`.
 - If Illuminarty or Reality Defender are always skipped, check their enable flags, keys, URLs, and PythonAnywhere outbound-network restrictions.
 - If the app returns `400 Bad Request`, re-check `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS`.
 - If the app returns `500`, inspect the error log from the `Web` tab after reloading.
+- If NumPy throws an import or binary error in `image_features.py`, the app now falls back to the non-NumPy frequency analyzer. If you still want the FFT-backed path, repair it inside the virtualenv with `pip install --upgrade numpy`.

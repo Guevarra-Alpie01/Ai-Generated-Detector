@@ -11,3 +11,9 @@ media/
 staticfiles/
 tmp/
 .pythonanywhere.env
+
+# Optional: keep deployment packages smaller by excluding local test modules.
+test.py
+tests.py
+test_*.py
+tests_*.py

@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from PIL import Image, ImageChops, ImageFilter, ImageOps, ImageStat
 
+
+def _load_numpy():
+    try:
+        import numpy as imported_numpy
+    except Exception:  # pragma: no cover - fallback exercised in deployments where numpy is missing or broken
+        return None
+    return imported_numpy
+
+
 try:
-    import numpy as np
-except ImportError:  # pragma: no cover - fallback exercised in environments without numpy
+    np = _load_numpy()
+except Exception:  # pragma: no cover - extra safety for unusual interpreter import failures
     np = None
 
 
@@ -86,7 +95,10 @@ def _frequency_metrics_fallback(grayscale: Image.Image) -> dict[str, float]:
 def _frequency_metrics(grayscale: Image.Image) -> dict[str, float]:
     if np is None:
         return _frequency_metrics_fallback(grayscale)
-    return _frequency_metrics_fft(grayscale)
+    try:
+        return _frequency_metrics_fft(grayscale)
+    except Exception:  # pragma: no cover - fallback exercised when numpy fft is unavailable or misconfigured
+        return _frequency_metrics_fallback(grayscale)
 
 
 def analyse_image_features(image: Image.Image) -> dict[str, float]:

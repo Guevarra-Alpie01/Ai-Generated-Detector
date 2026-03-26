@@ -85,6 +85,7 @@ class UploadDetectionAPIView(APIView):
 
         uploaded_file = serializer.validated_data["file"]
         source_type = serializer.validated_data["source_type"]
+        client_metadata = serializer.validated_data.get("client_metadata") or {}
         content_sha256 = hash_uploaded_file(uploaded_file)
         cached_result = find_recent_upload_result(content_sha256, source_type)
         if cached_result is not None:
@@ -107,7 +108,11 @@ class UploadDetectionAPIView(APIView):
 
         try:
             with temporary_uploaded_file(uploaded_file, uploaded_file.name) as temp_path:
-                outcome = detection_service.analyze_uploaded_media(str(temp_path), source_type)
+                outcome = detection_service.analyze_uploaded_media(
+                    str(temp_path),
+                    source_type,
+                    source_metadata=client_metadata,
+                )
 
             result = DetectionResult.objects.create(
                 source_type=source_type,

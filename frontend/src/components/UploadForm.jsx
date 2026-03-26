@@ -88,7 +88,7 @@ export default function UploadForm({ loading, onSubmit }) {
       } else {
         setOptimizationNote("");
       }
-      await onSubmit(preparedUpload.file);
+      await onSubmit(preparedUpload);
     } catch (submitError) {
       setError(submitError.message || "The upload could not be prepared.");
     }

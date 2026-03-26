@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from io import BytesIO
@@ -14,12 +15,14 @@ from rest_framework.test import APIClient
 
 from detector.services.detection_service import DetectionService
 from detector.services.local_image_detector import LocalImageDetector
+from detector.services.local_video_detector import LocalVideoDetector
 from detector.services.providers.base import ProviderResult
 from detector.services.providers.illuminarty_provider import IlluminartyProvider
 from detector.services.providers.reality_defender_provider import RealityDefenderProvider
 from detector.services.provider_registry import ProviderRegistry
 from detector.services.score_aggregator import ScoreAggregator
 from detector.services.scoring import DetectionOutcome, clamp_score, label_from_probability, weighted_score
+from detector.utils.metadata_checks import assess_image_metadata
 from detector.utils.url_media_extract import PublicMediaSnapshot
 from media_handler.constants import SourceTypes
 from results.models import DetectionResult
@@ -116,6 +119,32 @@ class ScoringUtilityTests(SimpleTestCase):
 
 
 class LocalDetectorTests(SimpleTestCase):
+    def test_metadata_assessment_treats_photoshop_export_as_edited_real(self):
+        score, notes = assess_image_metadata(
+            {
+                "image_format": "JPEG",
+                "Software": "Adobe Photoshop 25.0",
+                "icc_profile_present": True,
+            }
+        )
+
+        self.assertLess(score, 0.4)
+        self.assertTrue(any("enhancement" in note or "retouching" in note for note in notes))
+
+    def test_metadata_assessment_handles_browser_optimized_upload_more_neutrally(self):
+        score, notes = assess_image_metadata(
+            {
+                "image_format": "JPEG",
+                "browser_upload_optimized": True,
+                "original_extension": ".jpg",
+                "original_bytes": 13 * 1024 * 1024,
+                "optimized_bytes": 6 * 1024 * 1024,
+            }
+        )
+
+        self.assertLess(score, 0.46)
+        self.assertTrue(any("optimized in the browser" in note for note in notes))
+
     def test_local_image_detector_handles_real_image_path(self):
         local_detector = LocalImageDetector()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as image_file:
@@ -175,6 +204,24 @@ class LocalDetectorTests(SimpleTestCase):
 
         self.assertLess(score, 0.5)
         self.assertTrue(any("camera photo" in signal or "natural" in signal for signal in signals))
+
+    def test_video_metadata_scoring_distinguishes_edited_real_export_from_ai(self):
+        local_video_detector = LocalVideoDetector()
+        score, notes = local_video_detector._score_video_metadata(
+            {
+                "fps": 30,
+                "duration_seconds": 8,
+                "width": 1920,
+                "height": 1080,
+                "device_make": "Apple",
+                "device_model": "iPhone 14",
+                "software": "Adobe Premiere Pro 24.0",
+                "encoder": "H.264",
+            }
+        )
+
+        self.assertLess(score, 0.4)
+        self.assertTrue(any("edited or enhanced" in note or "captured video workflow" in note for note in notes))
 
 
 class ProviderBehaviorTests(SimpleTestCase):
@@ -493,6 +540,42 @@ class DetectionApiResponseTests(TestCase):
         self.assertEqual(payload["providers_used"], ["local", "illuminarty"])
         self.assertTrue(payload["fallback_used"])
         self.assertEqual(payload["signals"], ["frequency anomaly detected", "external provider score elevated"])
+
+    @patch("detector.views.DetectionService.analyze_uploaded_media")
+    def test_upload_api_passes_browser_optimization_metadata_to_detector(self, analyze_mock):
+        analyze_mock.return_value = DetectionOutcome(
+            label="Likely real",
+            confidence=0.63,
+            details="Upload metadata indicated a browser-optimized photo.",
+            breakdown={"ai_score": 0.37},
+            source_metadata={"browser_upload_optimized": True},
+            signals=["browser upload optimization detected"],
+            providers_used=["local"],
+            fallback_used=True,
+            provider_summary={"successful": ["local"], "skipped": [], "failed": []},
+            raw_provider_results={"local": {"ai_score": 0.37}},
+        )
+
+        response = self.client.post(
+            "/api/detect/upload/",
+            {
+                "file": SimpleUploadedFile("sample.jpg", build_test_image_bytes(), content_type="image/jpeg"),
+                "client_metadata": json.dumps(
+                    {
+                        "browser_upload_optimized": True,
+                        "original_extension": ".jpg",
+                        "original_bytes": 13000000,
+                        "optimized_bytes": 5200000,
+                    }
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        _, kwargs = analyze_mock.call_args
+        self.assertTrue(kwargs["source_metadata"]["browser_upload_optimized"])
+        self.assertEqual(kwargs["source_metadata"]["original_extension"], ".jpg")
 
     @patch("detector.views.fetch_public_media_snapshot")
     @patch("detector.views.DetectionService.analyze_image")

@@ -48,11 +48,26 @@ function buildOptimizedName(file, mimeType) {
   return `${stem}${suffix}`;
 }
 
+function buildClientMetadata(file, optimization = null) {
+  const extension = file.name.includes(".") ? `.${file.name.split(".").pop()?.toLowerCase() || ""}` : "";
+  return optimization
+    ? {
+        browser_upload_optimized: true,
+        original_extension: extension,
+        original_bytes: file.size,
+        original_mime_type: file.type,
+        optimized_bytes: optimization.optimizedBytes,
+        optimized_width: optimization.width,
+        optimized_height: optimization.height,
+      }
+    : null;
+}
+
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export async function prepareUploadFile(file) {
   if (!file || !file.type.startsWith("image/")) {
-    return { file, optimization: null };
+    return { file, optimization: null, clientMetadata: null };
   }
 
   const image = await loadImageFromFile(file);
@@ -60,7 +75,7 @@ export async function prepareUploadFile(file) {
   const needsResize = file.size > MAX_IMAGE_BYTES && (image.width > maxDimension || image.height > maxDimension);
   const needsCompression = file.size > MAX_IMAGE_BYTES;
   if (!needsResize && !needsCompression) {
-    return { file, optimization: null };
+    return { file, optimization: null, clientMetadata: null };
   }
 
   const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
@@ -72,7 +87,7 @@ export async function prepareUploadFile(file) {
   canvas.height = height;
   const context = canvas.getContext("2d", { alpha: true });
   if (!context) {
-    return { file, optimization: null };
+    return { file, optimization: null, clientMetadata: null };
   }
 
   context.drawImage(image, 0, 0, width, height);
@@ -82,7 +97,7 @@ export async function prepareUploadFile(file) {
   const optimizedBlob = await canvasToBlob(canvas, mimeType, quality);
 
   if (optimizedBlob.size >= file.size * 0.95) {
-    return { file, optimization: null };
+    return { file, optimization: null, clientMetadata: null };
   }
 
   const optimizedFile = new File([optimizedBlob], buildOptimizedName(file, mimeType), {
@@ -90,13 +105,16 @@ export async function prepareUploadFile(file) {
     lastModified: file.lastModified,
   });
 
+  const optimization = {
+    originalBytes: file.size,
+    optimizedBytes: optimizedFile.size,
+    width,
+    height,
+  };
+
   return {
     file: optimizedFile,
-    optimization: {
-      originalBytes: file.size,
-      optimizedBytes: optimizedFile.size,
-      width,
-      height,
-    },
+    optimization,
+    clientMetadata: buildClientMetadata(file, optimization),
   };
 }

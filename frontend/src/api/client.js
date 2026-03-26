@@ -49,9 +49,12 @@ async function parseResponse(response) {
   return payload;
 }
 
-export async function submitUploadDetection(file) {
+export async function submitUploadDetection(file, clientMetadata = null) {
   const formData = new FormData();
   formData.append("file", file);
+  if (clientMetadata) {
+    formData.append("client_metadata", JSON.stringify(clientMetadata));
+  }
   const timeoutMs = file.type.startsWith("video/") ? 90000 : 45000;
 
   const response = await fetchWithTimeout(

@@ -51,6 +51,7 @@ class LocalImageDetector:
                 artifact_score,
                 frequency_score,
                 stats,
+                source_metadata,
             )
             signals.extend(guard_signals)
 
@@ -275,6 +276,7 @@ class LocalImageDetector:
         artifact_score: float,
         frequency_score: float,
         stats: dict,
+        metadata: dict | None = None,
     ) -> tuple[float, float, float, list[str]]:
         signals: list[str] = []
         scores = {
@@ -282,6 +284,7 @@ class LocalImageDetector:
             "artifact": artifact_score,
             "frequency": frequency_score,
         }
+        metadata = metadata or {}
         dominant_name, dominant_score = max(scores.items(), key=lambda item: item[1])
         supporting_scores = [value for name, value in scores.items() if name != dominant_name]
         supporting_average = sum(supporting_scores) / len(supporting_scores)
@@ -302,6 +305,25 @@ class LocalImageDetector:
             scores["artifact"] = clamp_score(scores["artifact"] * 0.3 + ((scores["metadata"] + scores["frequency"]) / 2) * 0.7)
             signals.append(
                 "Camera-like texture and frequency evidence reduced a lone artifact spike to avoid overcalling edited real photos."
+            )
+
+        if (
+            (
+                metadata.get("browser_upload_optimized")
+                or any(
+                    keyword in str(metadata.get("Software", "")).lower()
+                    for keyword in ("photoshop", "lightroom", "snapseed", "capture one", "apple photos", "google photos")
+                )
+            )
+            and scores["artifact"] > 0.62
+            and scores["frequency"] > 0.56
+            and stats["local_noise"] > 0.004
+            and stats["high_frequency_ratio"] > 0.17
+        ):
+            scores["artifact"] = clamp_score((scores["artifact"] * 0.55) + 0.2)
+            scores["frequency"] = clamp_score((scores["frequency"] * 0.7) + 0.12)
+            signals.append(
+                "An editing or mobile optimization workflow was detected, so enhancement-like artifacts were weighted more conservatively."
             )
 
         return scores["metadata"], scores["artifact"], scores["frequency"], list(dict.fromkeys(signals))

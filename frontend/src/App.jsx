@@ -87,12 +87,12 @@ export default function App() {
     }
   }
 
-  async function handleUpload(file) {
+  async function handleUpload(preparedUpload) {
     setSubmitting(true);
     setError("");
 
     try {
-      const payload = await submitUploadDetection(file);
+      const payload = await submitUploadDetection(preparedUpload.file, preparedUpload.clientMetadata);
       startTransition(() => {
         setLatestResult(payload.result);
       });

@@ -36,13 +36,15 @@ def extract_video_metadata(video_path: str) -> dict:
     capture.release()
 
     duration = round(frame_count / fps, 2) if fps else 0
-    return {
+    metadata = {
         "fps": round(fps, 2),
         "frame_count": frame_count,
         "width": width,
         "height": height,
         "duration_seconds": duration,
     }
+    metadata.update(_extract_video_container_metadata(video_path))
+    return metadata
 
 
 def sample_video_frames(
@@ -111,7 +113,7 @@ def _extract_video_metadata_with_ffprobe(video_path: str) -> dict:
         "-select_streams",
         "v:0",
         "-show_entries",
-        "stream=avg_frame_rate,r_frame_rate,nb_frames,width,height,duration",
+        "stream=avg_frame_rate,r_frame_rate,nb_frames,width,height,duration,tags:format=format_name,format_long_name,tags",
         "-of",
         "json",
         video_path,
@@ -152,13 +154,15 @@ def _extract_video_metadata_with_ffprobe(video_path: str) -> dict:
     if not frame_count and fps and duration:
         frame_count = int(duration * fps)
 
-    return {
+    metadata = {
         "fps": round(fps, 2),
         "frame_count": frame_count,
         "width": width,
         "height": height,
         "duration_seconds": duration,
     }
+    metadata.update(_extract_ffprobe_payload_metadata(payload))
+    return metadata
 
 
 def _sample_video_frames_with_ffmpeg(
@@ -269,3 +273,74 @@ def _parse_frame_rate(value: str | None) -> float:
         return float(value)
     except ValueError:
         return 0.0
+
+
+def _extract_video_container_metadata(video_path: str) -> dict:
+    ffprobe_binary = _resolve_ffprobe_binary()
+    if not ffprobe_binary:
+        return {}
+
+    command = [
+        ffprobe_binary,
+        "-v",
+        "error",
+        "-show_entries",
+        "stream_tags:format=format_name,format_long_name,tags",
+        "-of",
+        "json",
+        video_path,
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=6,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {}
+
+    if completed.returncode != 0:
+        return {}
+
+    try:
+        payload = json.loads(completed.stdout or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+    return _extract_ffprobe_payload_metadata(payload)
+
+
+def _extract_ffprobe_payload_metadata(payload: dict) -> dict:
+    metadata: dict[str, str] = {}
+    format_section = payload.get("format") or {}
+    format_tags = format_section.get("tags") or {}
+    streams = payload.get("streams") or []
+    stream_tags = streams[0].get("tags") if streams and isinstance(streams[0], dict) else {}
+
+    if format_section.get("format_name"):
+        metadata["format_name"] = str(format_section["format_name"])
+    if format_section.get("format_long_name"):
+        metadata["format_long_name"] = str(format_section["format_long_name"])
+
+    tag_mappings = {
+        "encoder": "encoder",
+        "major_brand": "major_brand",
+        "compatible_brands": "compatible_brands",
+        "creation_time": "creation_time",
+        "com.apple.quicktime.make": "device_make",
+        "com.apple.quicktime.model": "device_model",
+        "com.apple.quicktime.software": "software",
+        "software": "software",
+        "handler_name": "handler_name",
+    }
+
+    for source in (format_tags, stream_tags or {}):
+        for tag_key, output_key in tag_mappings.items():
+            value = source.get(tag_key)
+            if value and output_key not in metadata:
+                metadata[output_key] = str(value)
+
+    return metadata

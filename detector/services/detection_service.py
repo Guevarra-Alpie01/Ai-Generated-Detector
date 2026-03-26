@@ -25,11 +25,16 @@ class DetectionService:
         self.provider_registry = provider_registry or ProviderRegistry()
         self.score_aggregator = score_aggregator or ScoreAggregator()
 
-    def analyze_uploaded_media(self, file_path: str, source_type: str) -> DetectionOutcome:
+    def analyze_uploaded_media(
+        self,
+        file_path: str,
+        source_type: str,
+        source_metadata: dict | None = None,
+    ) -> DetectionOutcome:
         if source_type == SourceTypes.IMAGE:
-            return self.analyze_image(file_path)
+            return self.analyze_image(file_path, source_metadata=source_metadata)
         if source_type == SourceTypes.VIDEO:
-            return self.analyze_video(file_path)
+            return self.analyze_video(file_path, source_metadata=source_metadata)
         raise ValidationError("Unsupported uploaded media type.")
 
     def analyze_image(

@@ -184,6 +184,48 @@ class LocalVideoDetector:
         duration = metadata.get("duration_seconds", 0)
         width = metadata.get("width", 0)
         height = metadata.get("height", 0)
+        metadata_text = " ".join(
+            str(metadata.get(key, ""))
+            for key in (
+                "device_make",
+                "device_model",
+                "software",
+                "encoder",
+                "format_name",
+                "format_long_name",
+                "handler_name",
+                "major_brand",
+                "compatible_brands",
+            )
+        ).lower()
+        editing_keywords = (
+            "premiere",
+            "final cut",
+            "davinci",
+            "capcut",
+            "inshot",
+            "imovie",
+            "kinemaster",
+            "adobe rush",
+            "vn",
+        )
+        device_keywords = ("iphone", "apple", "samsung", "pixel", "android", "xiaomi", "huawei", "oppo", "vivo")
+
+        explicit_ai_keyword = next((keyword for keyword in settings.AI_METADATA_KEYWORDS if keyword in metadata_text), "")
+        if explicit_ai_keyword:
+            score += 0.3
+            notes.append(f"Container metadata references `{explicit_ai_keyword}`, which strongly suggests AI generation.")
+
+        if any(keyword in metadata_text for keyword in device_keywords):
+            score -= 0.12
+            notes.append("Device or camera metadata is present, which supports a captured video workflow.")
+
+        matched_editor = next((keyword for keyword in editing_keywords if keyword in metadata_text), "")
+        if matched_editor:
+            score -= 0.08
+            notes.append(
+                f"Video metadata points to `{matched_editor}`, which is more consistent with a real clip that was edited or enhanced after capture."
+            )
 
         if not fps or fps < 10:
             score += 0.12

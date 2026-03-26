@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 
 from media_handler.services.url_utils import classify_source_url, normalize_public_url
@@ -6,10 +8,28 @@ from media_handler.validators import validate_uploaded_media
 
 class UploadDetectionSerializer(serializers.Serializer):
     file = serializers.FileField()
+    client_metadata = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_client_metadata(self, value):
+        if not value:
+            return {}
+
+        if isinstance(value, dict):
+            return value
+
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise serializers.ValidationError("Upload metadata must be valid JSON.") from exc
+
+        if not isinstance(parsed, dict):
+            raise serializers.ValidationError("Upload metadata must be a JSON object.")
+        return parsed
 
     def validate(self, attrs):
         file_obj = attrs["file"]
         attrs["source_type"] = validate_uploaded_media(file_obj)
+        attrs["client_metadata"] = attrs.get("client_metadata") or {}
         return attrs
 
 

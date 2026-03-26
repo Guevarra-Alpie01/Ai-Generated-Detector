@@ -62,7 +62,10 @@ export default function ResultCard({ result }) {
       <section className="result-shell result-placeholder">
         <div className="result-eyebrow">Awaiting analysis</div>
         <h2 className="result-title">Results appear here as soon as the scan finishes.</h2>
-        <p className="result-copy mb-0">Run an upload or URL check to see the result instantly.</p>
+        <p className="result-copy">Run an upload or URL check to see the result instantly.</p>
+        <div className="result-disclaimer">
+          AI analysis can still make mistakes and should be treated as a helpful signal, not final proof.
+        </div>
       </section>
     );
   }

@@ -320,6 +320,17 @@ body {
   word-break: break-word;
 }
 
+.result-disclaimer {
+  margin-top: 1rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
 .result-badge {
   padding: 0.7rem 1rem;
   font-size: 0.88rem;

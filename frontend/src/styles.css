@@ -110,7 +110,8 @@ body {
 }
 
 .analysis-stage,
-.history-section {
+.history-section,
+.system-footer {
   max-width: 1120px;
 }
 
@@ -472,6 +473,55 @@ body {
   margin-top: 2rem;
 }
 
+.footer-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 1.25rem;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 30px;
+  box-shadow: var(--app-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.footer-column {
+  min-width: 0;
+  padding: 0.25rem;
+}
+
+.footer-title {
+  margin: 0 0 0.65rem;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.footer-copy {
+  margin: 0 0 1rem;
+  color: var(--app-muted);
+  font-size: 0.98rem;
+}
+
+.footer-stack-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.footer-stack-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-soft);
+  color: var(--app-ink);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 .history-table {
   --bs-table-bg: transparent;
   --bs-table-color: var(--app-ink);
@@ -499,6 +549,7 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .footer-panel,
   .minimal-result-grid,
   .result-score-grid,
   .result-meta-grid {
@@ -513,7 +564,8 @@ body {
 
   .analysis-workspace,
   .result-shell,
-  .history-card {
+  .history-card,
+  .footer-panel {
     padding: 1.15rem;
   }
 

@@ -211,6 +211,35 @@ export default function App() {
         <section className="history-section mx-auto">
           <HistoryTable history={history} loading={historyLoading} page={historyPage} onPageChange={loadHistory} />
         </section>
+
+        <section className="system-footer mx-auto">
+          <footer className="footer-panel">
+            <div className="footer-column">
+              <div className="result-eyebrow">System Stack</div>
+              <h2 className="footer-title">Built for fast, lightweight AI media screening.</h2>
+              <p className="footer-copy">
+                Powered by Python, Django, Django REST Framework, React, Bootstrap, and SQLite.
+              </p>
+              <div className="footer-stack-list">
+                <span className="footer-stack-pill">Python</span>
+                <span className="footer-stack-pill">Django</span>
+                <span className="footer-stack-pill">DRF</span>
+                <span className="footer-stack-pill">React</span>
+                <span className="footer-stack-pill">Bootstrap</span>
+                <span className="footer-stack-pill">SQLite</span>
+              </div>
+            </div>
+
+            <div className="footer-column">
+              <div className="result-eyebrow">Developer</div>
+              <h2 className="footer-title">Alpie Guevarra</h2>
+              <p className="footer-copy mb-0">
+                Aspiring full stack developer, web developer, and software engineer building practical, responsive
+                systems with clean user-focused design.
+              </p>
+            </div>
+          </footer>
+        </section>
       </main>
     </div>
   );
